@@ -61,6 +61,13 @@ coverage.xml
 # Local project cache and generated results
 cache/
 
+# Dataset files
+adult_full_dataset.csv
+compas_recidivism_dataset.csv
+default of credit card clients.csv
+diabetes_dataset.csv
+diabetic_data.csv
+
 # Environment variables
 .env
 .env.*
