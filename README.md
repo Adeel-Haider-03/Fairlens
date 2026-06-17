@@ -34,7 +34,6 @@ Algorithmic bias in ML systems causes real harm — from credit systems that dis
 
 - **An interactive dashboard** — upload any CSV, select a protected attribute, and run the full bias mitigation pipeline with no code required
 - **A research pipeline** — systematic evaluation across 5 tabular datasets (Adult Census, Taiwan Credit, COMPAS, German Credit, Diabetes) and 1 image dataset (Fitzpatrick17k)
-- **A published contribution** — extends the Loganathan et al. (2025) tabular framework to image classification for the first time
 
 ---
 
@@ -302,10 +301,10 @@ If you use FairLens in your research, please cite:
 ```bibtex
 @misc{fairlens2025,
   title     = {FairLens: Extending a Bias Detection and Mitigation Framework to Image Data},
-  author    = {[Your Name]},
-  year      = {2025},
+  author    = {[Adeel Haider]},
+  year      = {2026},
   note      = {Final Year Project, [Your University]},
-  url       = {https://github.com/YOUR_USERNAME/fairlens}
+  url       = {https://github.com/Adeel-Haider-03/Fairlens}
 }
 ```
 
@@ -329,5 +328,5 @@ This project replicates:
 ---
 
 <p align="center">
-  Built as a Final Year Project · Computer Science · 2025
+  Built as a Final Year Project · Computer Science · 2026
 </p>
