@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    background-color: #0A0E1A;
+    color: #e0e4f0;
+    font-family: 'DM Sans', sans-serif;
+    margin: 0;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0D1228; }
+  ::-webkit-scrollbar-thumb { background: #2a3a6e; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #00E5FF; }
+}
+
+@layer components {
+  .card {
+    @apply bg-ink-800 border border-ink-600 rounded-2xl p-6;
+    box-shadow: 0 0 0 1px rgba(0,229,255,0.04), 0 4px 32px rgba(0,0,0,0.4);
+  }
+  .card-glow {
+    @apply card;
+    box-shadow: 0 0 0 1px rgba(0,229,255,0.10), 0 8px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(0,229,255,0.06);
+  }
+  .btn-primary {
+    @apply font-display text-sm font-bold px-6 py-3 rounded-xl transition-all duration-200;
+    background: linear-gradient(135deg, #00E5FF 0%, #00bcd4 100%);
+    color: #0A0E1A;
+    box-shadow: 0 0 20px rgba(0,229,255,0.3);
+  }
+  .btn-primary:hover { box-shadow: 0 0 32px rgba(0,229,255,0.5); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-ghost {
+    @apply font-display text-sm px-5 py-2.5 rounded-xl border border-ink-600 text-ink-200 hover:border-cyan hover:text-cyan transition-all duration-200;
+  }
+  .input-field {
+    @apply w-full bg-ink-900 border border-ink-600 rounded-xl px-4 py-3 text-ink-100 font-body text-sm
+           focus:outline-none focus:border-cyan focus:ring-1 focus:ring-cyan/30 transition-all duration-200;
+  }
+  .label {
+    @apply block text-xs font-display font-bold uppercase tracking-widest text-ink-200 mb-2;
+  }
+  .step-dot {
+    @apply w-8 h-8 rounded-full flex items-center justify-center text-xs font-display font-bold transition-all duration-300;
+  }
+  .metric-chip {
+    @apply rounded-lg px-3 py-1.5 font-mono text-xs font-bold;
+  }
+  .glow-text { color: #00E5FF; text-shadow: 0 0 20px rgba(0,229,255,0.5); }
+  .tag {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-display font-bold border;
+  }
+}
+
+/* Grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0,229,255,0.3); }
+  50%       { box-shadow: 0 0 24px rgba(0,229,255,0.7); }
+}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.4s ease-out forwards; }
+.fade-up-d1 { animation-delay: 0.1s; opacity: 0; }
+.fade-up-d2 { animation-delay: 0.2s; opacity: 0; }
+.fade-up-d3 { animation-delay: 0.3s; opacity: 0; }
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.06), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Recharts overrides */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line { stroke: rgba(42,58,110,0.5) !important; }
+.recharts-text { fill: #b3bdda !important; font-family: 'Space Mono', monospace; font-size: 10px; }
