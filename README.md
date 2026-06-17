@@ -194,7 +194,6 @@ The notebook runs all 5 stages sequentially and prints fairness metrics after ea
 | [German Credit](https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)) | 1,000 | Age (binary) | Older | Credit risk |
 | [Fitzpatrick17k](https://github.com/mattgroh/fitzpatrick17k) | 16,574 | Skin tone (FST) | FST 1–2 (light) | Dermatology |
 
-> ⚠️ Datasets are **not included** in this repository due to size and licensing. Download links above.
 
 ---
 
