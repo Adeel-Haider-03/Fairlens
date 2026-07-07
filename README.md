@@ -75,6 +75,9 @@ difference without asserting error in a work whose code we cannot inspect.
    evaluation we obtain **~84%**, consistent with independent published work.
 8. **A "do-no-harm" guard is required** for small datasets (e.g. German Credit),
    where post-processing otherwise collapses the model.
+9. **The framework needs adaptation for images.** AIF360's ADB does not transfer
+   to deep ResNet features; an adapted fairness-regularised loss + group-threshold
+   calibration is required for the Fitzpatrick17k image domain (see extension).
 
 ---
 
@@ -198,8 +201,23 @@ Open `http://localhost:5173`.
 | [Fitzpatrick17k](https://github.com/mattgroh/fitzpatrick17k)                            | 16,574 | Skin tone    | FST 1–2    | Dermatology (image extension) |
 
 > ⚠️ Datasets are **not included** in this repository due to size and licensing.
-> The image-domain extension (Fitzpatrick17k + ResNet-50) is provided as a
-> Jupyter notebook and is exploratory.
+
+### Image-domain extension (Fitzpatrick17k)
+
+The tabular pipeline does **not** transfer directly to images: AIF360's
+Adversarial Debiasing collapses on high-dimensional ResNet-50 features. We
+therefore **adapt** the framework for the image domain (see
+[notebook/Image_Dataset.ipynb](notebook/Image_Dataset.ipynb)):
+
+- **Pre-processing:** Reweighing (weighted sampler for ResNet fine-tuning)
+- **In-processing:** a **fairness-regularised loss** (weighted cross-entropy +
+  demographic-parity + soft equalised-odds penalties) — *not* AIF360 ADB
+- **Post-processing:** **group-threshold calibration**, with thresholds
+  optimised on the **validation** set and applied to test — *not* AIF360 CEO
+
+This adaptation is a distinct contribution; it is reported under its own method
+names and should be treated as a domain-adaptation extension of the tabular
+study.
 
 ---
 

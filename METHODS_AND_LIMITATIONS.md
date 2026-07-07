@@ -77,6 +77,15 @@ standard deviation of ≈ 0.22 (mean ≈ 0.70 on Adult) — DI varies from ≈ 0
 run is therefore not reliable; Reweighing gives a smaller but far steadier
 improvement.
 
+**(c) The tabular methods do not transfer to images.** On Fitzpatrick17k
+(ResNet-50, protected attribute skin tone), AIF360's ADB collapses on the
+2048-dimensional feature vectors. The framework's pre → in → post *structure*
+transfers, but its *specific methods* do not, so the image extension **adapts**
+each stage: Reweighing as a weighted sampler, in-processing as a
+fairness-regularised loss (demographic-parity + soft equalised-odds penalties),
+and post-processing as validation-calibrated group thresholds. These adapted
+methods are reported under their own names, not "ADB"/"CEO".
+
 ---
 
 ## 3. Why our Adult Census results differ from the paper
@@ -136,6 +145,12 @@ reaches only its ≈ 0.80 boundary.
 8. **CEO uses group-conditional thresholds** (the protected attribute at decision
    time), raising the disparate-treatment consideration standard to
    post-processing fairness methods.
+
+9. **Image extension is single-run and uses adapted methods.** The
+   Fitzpatrick17k results come from adapted (not AIF360) in-/post-processing and
+   a single run; they should be reported as a preliminary domain-adaptation
+   extension unless repeated over multiple seeds. Its group-threshold
+   post-processing is calibrated on validation (not test) to avoid leakage.
 
 ---
 

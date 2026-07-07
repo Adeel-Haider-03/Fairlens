@@ -93,7 +93,23 @@ class) — our guard flags exactly this kind of false result.
 
 ---
 
-## 6. Where the framework honestly stands
+## 6. Extending to images (dermatology)
+
+We also tried the framework on medical images — skin-lesion photos
+(Fitzpatrick17k), where the "groups" are lighter vs darker skin tones. The plain
+result: **the exact tabular recipe does not carry over.** Adversarial Debiasing,
+which works on spreadsheet-style features, breaks down on the thousands of
+numbers a deep image model produces. So we kept the same three-step *idea*
+(before / during / after training) but swapped in image-appropriate techniques —
+a fairness-aware training loss, and adjusting the decision cut-off separately for
+each skin-tone group (chosen on validation data, never the test data). This
+reduces skin-tone bias in the image model. The finding itself — *the framework
+needs adapting for images* — is part of the contribution. (These image results
+are from a single run and are reported as preliminary.)
+
+---
+
+## 7. Where the framework honestly stands
 
 - ✅ It **detects and reduces bias** across multiple datasets (Adult, COMPAS,
   German, Taiwan), with realistic accuracy.
@@ -109,7 +125,7 @@ report what we see, and are careful not to over-claim.
 
 ---
 
-## 7. One-paragraph summary (for a slide)
+## 8. One-paragraph summary (for a slide)
 
 > FairLens faithfully replicates a three-stage bias-mitigation framework
 > (Reweighing → Adversarial Debiasing → Calibrated Equalised Odds) across four

@@ -186,6 +186,48 @@ four metrics near-fair; on German the do-no-harm guard is expected to trigger.*
 
 ---
 
+## 9b. Image-Domain Extension (Fitzpatrick17k)
+
+We attempted to extend the framework to the image domain — skin-lesion
+classification on Fitzpatrick17k with ResNet-50, protected attribute skin tone
+(light vs dark) — and found that **the tabular pipeline does not transfer
+directly**: AIF360's Adversarial Debiasing operates on the 2048-dimensional
+ResNet feature vectors and **collapses** (degenerate scores), so genuine ADB is
+not usable in this setting.
+
+We therefore **adapt** each stage to the image domain:
+
+- **Pre-processing** — Reweighing implemented as a weighted sampler during
+  ResNet fine-tuning.
+- **In-processing** — a **fairness-regularised loss**: weighted cross-entropy
+  plus a demographic-parity penalty and a soft equalised-odds (TPR-gap) penalty.
+  This is a regularisation-based in-processing method, *not* AIF360 ADB.
+- **Post-processing** — **group-threshold calibration**: per-group decision
+  thresholds are optimised on the **validation** set (a joint objective trading
+  balanced accuracy against the TPR/FPR gaps, swept over a weighting α) and then
+  applied unchanged to the test set. This is *not* AIF360 CEO.
+
+Because the mechanisms differ from the tabular stages, they are reported under
+their own names rather than as "ADB" and "CEO".
+
+**Table 4. Image-domain extension, Fitzpatrick17k (ResNet-50).**
+*(Re-run the corrected notebook to populate; thresholds are now calibrated on
+validation, not test, so numbers will differ from any earlier leaked run.)*
+
+| Stage | Accuracy | BA | SPD | DI | AOD | EOD |
+|---|---|---|---|---|---|---|
+| Baseline (ResNet-50) | […] | […] | […] | […] | […] | […] |
+| + Reweighing | […] | […] | […] | […] | […] | […] |
+| + Fairness-regularised loss | […] | […] | […] | […] | […] | […] |
+| + Group-threshold calibration | […] | […] | […] | […] | […] | […] |
+
+**Finding:** the framework's *philosophy* (pre → in → post) transfers to images,
+but its *specific tabular methods* (AIF360 ADB/CEO) do not — domain-specific
+adaptation is required. The image results are currently from a single run and
+should be reported as preliminary unless repeated over multiple seeds.
+
+---
+
 ## 10. Threats to Validity / Limitations
 
 - **Model-agnostic in-processing.** AIF360 ADB does not use the base model, so
