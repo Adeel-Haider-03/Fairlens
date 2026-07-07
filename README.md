@@ -62,7 +62,7 @@ difference without asserting error in a work whose code we cannot inspect.
 2. **Bias is proxy-mediated.** The direct feature importance of `race` is ~1%,
    yet the models are strongly biased — bias flows through correlated features.
 3. **SMOTE does not improve fairness** and, in several cases, worsens it; one
-   variant produced a *degenerate* model that only *looked* fair.
+   variant produced a _degenerate_ model that only _looked_ fair.
 4. **The framework reduces bias.** On Adult, the full pipeline moves SPD from
    −0.101 to **−0.035** and DI from 0.60 to **0.80** at ~84% accuracy.
 5. **ADB and CEO are model-agnostic.** AIF360's Adversarial Debiasing is a
@@ -82,14 +82,14 @@ difference without asserting error in a work whose code we cannot inspect.
 
 ### Adult Census — full pipeline (5-seed mean ± std)
 
-| Stage | Accuracy | SPD | DI | AOD | EOD |
-|---|---|---|---|---|---|
-| Baseline (RF) | 0.857 | −0.093 | 0.565 | −0.041 | −0.049 |
-| + Reweighing (RF) | 0.856 | −0.089 | 0.582 | −0.034 | −0.037 |
-| + ADB *(shared)* | 0.851 | −0.063 ±0.051 | 0.700 ±0.244 | 0.000 | 0.014 |
-| **+ CEO *(shared, final)*** | **0.839 ±0.010** | **−0.035 ±0.038** | **0.796 ±0.223** | **0.046** | **0.096** |
+| Stage                       | Accuracy         | SPD               | DI               | AOD       | EOD       |
+| --------------------------- | ---------------- | ----------------- | ---------------- | --------- | --------- |
+| Baseline (RF)               | 0.857            | −0.093            | 0.565            | −0.041    | −0.049    |
+| + Reweighing (RF)           | 0.856            | −0.089            | 0.582            | −0.034    | −0.037    |
+| + ADB _(shared)_            | 0.851            | −0.063 ±0.051     | 0.700 ±0.244     | 0.000     | 0.014     |
+| **+ CEO _(shared, final)_** | **0.839 ±0.010** | **−0.035 ±0.038** | **0.796 ±0.223** | **0.046** | **0.096** |
 
-> *"shared"* = the ADB and CEO stages are model-agnostic and therefore identical
+> _"shared"_ = the ADB and CEO stages are model-agnostic and therefore identical
 > for RF, XGBoost, LightGBM and TabNet. Only the Baseline and Reweighing stages
 > are model-specific.
 
@@ -145,9 +145,11 @@ FairLens/
 ## Installation
 
 ### Prerequisites
+
 - Python 3.9+ · Node.js 18+ · pip
 
 ### Backend
+
 ```bash
 cd backend
 python -m venv venv
@@ -157,11 +159,13 @@ uvicorn main:app --reload --port 8000
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
 Open `http://localhost:5173`.
 
 ---
@@ -185,13 +189,13 @@ Open `http://localhost:5173`.
 
 ## Datasets
 
-| Dataset | Rows | Protected | Privileged | Domain |
-|---|---|---|---|---|
-| [Adult Census](https://archive.ics.uci.edu/ml/datasets/adult) | 48,842 | Race | White | Income prediction |
-| [COMPAS](https://github.com/propublica/compas-analysis) | 7,214 | Race | Caucasian | Recidivism prediction |
-| [German Credit](https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)) | 1,000 | Age (binary) | Older | Credit risk |
-| [Taiwan Credit](https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients) | 30,000 | Sex | Male | Credit default |
-| [Fitzpatrick17k](https://github.com/mattgroh/fitzpatrick17k) | 16,574 | Skin tone | FST 1–2 | Dermatology (image extension) |
+| Dataset                                                                                 | Rows   | Protected    | Privileged | Domain                        |
+| --------------------------------------------------------------------------------------- | ------ | ------------ | ---------- | ----------------------------- |
+| [Adult Census](https://archive.ics.uci.edu/ml/datasets/adult)                           | 48,842 | Race         | White      | Income prediction             |
+| [COMPAS](https://github.com/propublica/compas-analysis)                                 | 7,214  | Race         | Caucasian  | Recidivism prediction         |
+| [German Credit](<https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)>) | 1,000  | Age (binary) | Older      | Credit risk                   |
+| [Taiwan Credit](https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients) | 30,000 | Sex          | Male       | Credit default                |
+| [Fitzpatrick17k](https://github.com/mattgroh/fitzpatrick17k)                            | 16,574 | Skin tone    | FST 1–2    | Dermatology (image extension) |
 
 > ⚠️ Datasets are **not included** in this repository due to size and licensing.
 > The image-domain extension (Fitzpatrick17k + ResNet-50) is provided as a
@@ -270,6 +274,7 @@ If you use FairLens:
 ---
 
 ## Acknowledgements
+
 - Loganathan et al. (2025) for the original framework
 - IBM AIF360 team for the fairness toolkit
 - Groh et al. for the Fitzpatrick17k dataset
