@@ -30,9 +30,9 @@ const MITIGATION = [
     stage: 'Post-Processing',
     stageColor: 'rose',
     name: 'Calibrated Equalised Odds',
-    desc: 'Adjusts classification thresholds post-training to balance TPR and FPR across groups.',
+    desc: 'Adjusts decision thresholds after training to equalise error rates (TPR/FPR) across groups. Calibrated on the debiased scores from ADB (or the reweighed model).',
     paper: 'Pleiss et al. (2017)',
-    requires: 'ADB',
+    requires: 'Reweighing',
   },
 ]
 
@@ -48,6 +48,7 @@ export default function StepModels({ onNext, onBack }) {
   const [mitigation,   setMitigation]   = useState(['Reweighing', 'ADB', 'CEO'])
   const [smoteVars,    setSmoteVars]    = useState([])
   const [testSize,     setTestSize]     = useState(0.3)
+  const [nSeeds,       setNSeeds]       = useState(1)
   const [error,        setError]        = useState('')
 
   const toggleModel = (id) =>
@@ -56,17 +57,16 @@ export default function StepModels({ onNext, onBack }) {
   const toggleMit = (id) => {
     setMitigation(m => {
       if (m.includes(id)) {
-        // Remove this and anything that requires it
+        // Remove this and anything that requires it. Both ADB and CEO now
+        // depend only on Reweighing (CEO no longer needs ADB — it calibrates
+        // each model's own scores), so removing ADB does NOT remove CEO.
         const toRemove = [id]
         if (id === 'Reweighing') toRemove.push('ADB', 'CEO')
-        if (id === 'ADB')        toRemove.push('CEO')
         return m.filter(x => !toRemove.includes(x))
       } else {
-        // Add prerequisites
+        // Add prerequisites — ADB and CEO each require Reweighing only
         const toAdd = [id]
-        if (id === 'CEO' && !m.includes('ADB'))        toAdd.unshift('ADB')
-        if (id === 'ADB' && !m.includes('Reweighing')) toAdd.unshift('Reweighing')
-        if (id === 'CEO' && !m.includes('Reweighing')) toAdd.unshift('Reweighing')
+        if ((id === 'ADB' || id === 'CEO') && !m.includes('Reweighing')) toAdd.unshift('Reweighing')
         return [...new Set([...m, ...toAdd])]
       }
     })
@@ -80,7 +80,7 @@ export default function StepModels({ onNext, onBack }) {
     if (mitigation.length === 0 && smoteVars.length === 0) {
       setError('Select at least one mitigation technique'); return
     }
-    onNext({ models, mitigation_steps: mitigation, smote_variants: smoteVars, test_size: testSize })
+    onNext({ models, mitigation_steps: mitigation, smote_variants: smoteVars, test_size: testSize, n_seeds: nSeeds })
   }
 
   const colorMap = { cyan: 'text-cyan border-cyan/30 bg-cyan/10', amber: 'text-amber border-amber/30 bg-amber/5', rose: 'text-rose border-rose/30 bg-rose/5' }
@@ -200,6 +200,29 @@ export default function StepModels({ onNext, onBack }) {
         <p className="text-[11px] text-ink-500 font-body">
           {Math.round((1-testSize)*100)}% train / {Math.round(testSize*100)}% test · Standard split is 70/30
         </p>
+      </div>
+
+      {/* Seeds — multi-seed averaging */}
+      <div className="card-glow space-y-3">
+        <div>
+          <p className="label">Random Seeds <span className="text-ink-400 font-normal normal-case tracking-normal">(multi-seed averaging)</span></p>
+          <p className="text-xs text-ink-400 font-body">
+            ADB is nondeterministic. Running multiple seeds reports <strong className="text-white">mean ± std</strong> per metric, so you can tell a real difference from run-to-run noise. More seeds = more robust but slower (each seed reruns every model).
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {[1, 3, 5, 10].map(n => (
+            <button key={n} onClick={() => setNSeeds(n)}
+              className={`px-4 py-2 rounded-xl font-display text-xs font-bold border transition-all ${
+                nSeeds === n ? 'bg-cyan/10 border-cyan text-cyan' : 'bg-ink-800 border-ink-700 text-ink-400 hover:border-ink-500'
+              }`}>
+              {n} seed{n>1?'s':''}
+            </button>
+          ))}
+          {nSeeds > 1 && (
+            <span className="text-[11px] text-amber font-body ml-1">⚠ ~{nSeeds}× longer runtime</span>
+          )}
+        </div>
       </div>
 
       {error && <div className="card border-rose/30 bg-rose/5 text-rose text-sm font-body">{error}</div>}

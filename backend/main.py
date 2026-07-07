@@ -44,6 +44,46 @@ def sanitize_floats(obj):
         return obj
     return obj
 
+_METRIC_KEYS = ["accuracy", "balanced_accuracy", "spd", "di", "aod", "eod"]
+
+
+def aggregate_seed_results(per_seed: list) -> dict:
+    """Aggregate a list of {model: {stage: metrics}} dicts (one per seed) into a
+    single dict where each numeric metric is the MEAN across seeds, plus a
+    parallel `<metric>_std` field holding the (population) standard deviation.
+
+    The mean is stored in the original field name so all existing consumers
+    (charts, tables) keep working unchanged; std is additive/optional. Confusion
+    matrices and the degeneracy flag are carried from the first seed.
+    """
+    import statistics
+    if not per_seed:
+        return {}
+    if len(per_seed) == 1:
+        return per_seed[0]
+
+    agg = {}
+    for model in per_seed[0].keys():
+        agg[model] = {}
+        for stage in per_seed[0][model].keys():
+            base = dict(per_seed[0][model][stage])   # carries cm_*, degenerate, etc.
+            for mk in _METRIC_KEYS:
+                vals = [ps[model][stage].get(mk)
+                        for ps in per_seed
+                        if model in ps and stage in ps[model]]
+                vals = [v for v in vals if v is not None]
+                if vals:
+                    base[mk]          = round(sum(vals) / len(vals), 4)
+                    base[mk + "_std"] = round(statistics.pstdev(vals), 4) if len(vals) > 1 else 0.0
+            # A stage is degenerate if it was degenerate in ANY seed
+            base["degenerate"] = any(
+                ps.get(model, {}).get(stage, {}).get("degenerate")
+                for ps in per_seed
+            )
+            agg[model][stage] = base
+    return agg
+
+
 app = FastAPI(title="FairLens API", version="1.0.0")
 
 app.add_middleware(
@@ -79,6 +119,7 @@ class TrainConfig(BaseModel):
     mitigation_steps: List[str]
     smote_variants: List[str]
     test_size: float = 0.3
+    n_seeds: int = 1              # >1 → run multiple seeds, report mean ± std
     session_name: str = ""        # optional human-readable label
 
 
@@ -98,6 +139,7 @@ def make_cache_key(df_fingerprint: str, config: TrainConfig) -> str:
         "mitigation": sorted(config.mitigation_steps),
         "smote":      sorted(config.smote_variants),
         "test_size":  config.test_size,
+        "n_seeds":    config.n_seeds,
     }
     raw = json.dumps(payload, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
@@ -395,52 +437,76 @@ async def run_training_job(job_id: str, df: pd.DataFrame,
         job["status"] = "running"
         update("Preparing dataset...", 5)
 
-        engine = FairnessEngine(
-            df=df,
-            target_column=config.target_column,
-            protected_attribute=config.protected_attribute,
-            privileged_value=config.privileged_value,
-            favorable_value=config.favorable_value,
-            protected_threshold=config.protected_threshold,
-            feature_columns=config.feature_columns,
-            test_size=config.test_size,
-        )
+        n_seeds = max(1, int(getattr(config, "n_seeds", 1) or 1))
+        seeds   = [42 + i for i in range(n_seeds)]
 
-        update("Computing baseline bias metrics...", 10)
-        baseline = engine.compute_baseline_metrics()
-        feature_importance = engine.compute_feature_importance()
-
+        baseline = None
+        feature_importance = []
         smote_results = {}
-        if config.smote_variants:
-            update("Running SMOTE experiments...", 20)
-            smote_results = engine.run_smote_experiments(
-                config.smote_variants,
-                progress_callback=lambda s, p: update(s, 20 + int(p * 20))
-            )
+        per_seed_mitigation = []          # one {model: {stage: metrics}} per seed
+        last_engine = None
 
-        mitigation_results = {}
         total_models = len(config.models)
-        for i, model_name in enumerate(config.models):
-            base_progress = 40 + int(i / total_models * 55)
-            update(f"Training {model_name}...", base_progress)
-            model_res = engine.run_model_pipeline(
-                model_name=model_name,
-                mitigation_steps=config.mitigation_steps,
-                progress_callback=lambda s, p: update(
-                    f"{model_name}: {s}", base_progress + int(p * 55 / total_models)
-                )
-            )
-            mitigation_results[model_name] = model_res
 
-        update("Saving results...", 98)
+        for si, seed in enumerate(seeds):
+            seed_lo = int(si / n_seeds * 90) + 5       # 5..95 across seeds
+            seed_hi = int((si + 1) / n_seeds * 90) + 5
+            span    = max(seed_hi - seed_lo, 1)
+            tag     = f" (seed {si+1}/{n_seeds})" if n_seeds > 1 else ""
+
+            engine = FairnessEngine(
+                df=df,
+                target_column=config.target_column,
+                protected_attribute=config.protected_attribute,
+                privileged_value=config.privileged_value,
+                favorable_value=config.favorable_value,
+                protected_threshold=config.protected_threshold,
+                feature_columns=config.feature_columns,
+                test_size=config.test_size,
+                random_state=seed,
+            )
+            last_engine = engine
+
+            # Baseline, feature importance and SMOTE are computed once (seed 0 /
+            # first seed) — they characterise the data, not the mitigation runs.
+            if si == 0:
+                update(f"Computing baseline bias metrics...{tag}", seed_lo)
+                baseline = engine.compute_baseline_metrics()
+                feature_importance = engine.compute_feature_importance()
+                if config.smote_variants:
+                    update(f"Running SMOTE experiments...{tag}", seed_lo + 2)
+                    smote_results = engine.run_smote_experiments(
+                        config.smote_variants,
+                        models=config.models,
+                        progress_callback=lambda s, p: update(s + tag, seed_lo + 2)
+                    )
+
+            seed_mitigation = {}
+            for i, model_name in enumerate(config.models):
+                bp = seed_lo + int(i / total_models * span)
+                update(f"Training {model_name}...{tag}", bp)
+                model_res = engine.run_model_pipeline(
+                    model_name=model_name,
+                    mitigation_steps=config.mitigation_steps,
+                    progress_callback=lambda s, p: update(
+                        f"{model_name}: {s}{tag}", bp + int(p * span / total_models)
+                    )
+                )
+                seed_mitigation[model_name] = model_res
+            per_seed_mitigation.append(seed_mitigation)
+
+        update("Aggregating results...", 97)
+        mitigation_results = aggregate_seed_results(per_seed_mitigation)
 
         results = {
             "config":              config.dict(),
+            "n_seeds":             n_seeds,
+            "seeds":               seeds,
             "baseline":            baseline,
             "feature_importance":  feature_importance,
             "smote_results":       smote_results,
             "mitigation_results":  mitigation_results,
-            "summary":             engine.generate_summary(baseline, mitigation_results),
+            "summary":             last_engine.generate_summary(baseline, mitigation_results),
         }
 
         # Sanitize any nan/inf floats before JSON serialization

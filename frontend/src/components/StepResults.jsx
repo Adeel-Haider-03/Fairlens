@@ -37,7 +37,33 @@ const DiCell = ({ v, fair }) => {
 const pct       = v => (v == null || isNaN(v)) ? '—' : `${(v * 100).toFixed(1)}%`
 const isFairSPD = v => v != null && Math.abs(v) < 0.05
 const isFairDI  = v => v != null && v >= 0.8 && v <= 1.25
-const isFair    = (v, m) => m === 'spd' ? isFairSPD(v) : m === 'di' ? isFairDI(v) : (v != null && Math.abs(v) < 0.05)
+const isFairErr = v => v != null && Math.abs(v) < 0.1   // AOD / EOD band (standard convention)
+const isFair    = (v, m) => m === 'spd' ? isFairSPD(v) : m === 'di' ? isFairDI(v) : isFairErr(v)
+
+// ─── SMOTE shape normalizer ───────────────────────────────────────────────────
+// Backend now returns {model: {variant: metrics}}. Older cached sessions stored
+// a flat {variant: metrics}. Normalize both to a canonical nested form so every
+// consumer (section, insights, PDF export) works regardless of when it was run.
+function normalizeSmote(smote_results) {
+  if (!smote_results || Object.keys(smote_results).length === 0)
+    return { models: [], byModel: {}, isNested: false }
+  const firstVal = Object.values(smote_results)[0]
+  const isMetricLeaf = firstVal && typeof firstVal === 'object' &&
+    ('spd' in firstVal || 'error' in firstVal || 'accuracy' in firstVal)
+  if (isMetricLeaf) {
+    // Flat (legacy): wrap the variants under one synthetic model bucket
+    return { models: ['Model'], byModel: { Model: smote_results }, isNested: false }
+  }
+  return { models: Object.keys(smote_results), byModel: smote_results, isNested: true }
+}
+// Flatten every model×variant metric entry (skipping errors) into a flat array
+function smoteAllEntries(byModel) {
+  const out = []
+  for (const [model, variants] of Object.entries(byModel || {}))
+    for (const [variant, v] of Object.entries(variants || {}))
+      if (v && !v.error) out.push({ model, variant, ...v })
+  return out
+}
 
 // ─── Animated number ──────────────────────────────────────────────────────────
 function AnimNum({ value, decimals=4, color='#00E5FF', size='text-3xl', prefix='' }) {
@@ -64,7 +90,11 @@ function HeroBanner({ results, config }) {
     return (!best || Math.abs(ceo.spd) < Math.abs(best.spd)) ? { ...ceo, model: m } : best
   }, null)
 
-  const spdBefore = Math.abs(baseline?.spd || 0)
+  // Apples-to-apples: compare the best model's OWN baseline prediction SPD to
+  // its final SPD — not the dataset base-rate disparity (which is a different
+  // quantity). Falls back to base-rate only if the model original is missing.
+  const bestOrigSpd = bestCEO ? mitigation_results[bestCEO.model]?.original?.spd : null
+  const spdBefore = Math.abs((bestOrigSpd ?? baseline?.spd) || 0)
   const spdAfter  = Math.abs(bestCEO?.spd || 0)
   const reduction = spdBefore > 0 ? ((spdBefore - spdAfter) / spdBefore * 100).toFixed(0) : 0
   const fullyFair = isFairSPD(bestCEO?.spd) && isFairDI(bestCEO?.di)
@@ -95,16 +125,16 @@ function HeroBanner({ results, config }) {
           </div>
         </div>
 
-        {/* Initial SPD */}
+        {/* Baseline SPD (best model, predictions) */}
         <div className="flex flex-col gap-1">
-          <p className="label text-[10px] mb-1">Initial SPD</p>
-          <AnimNum value={fmt(baseline?.spd)} decimals={4} color="#FF4D6D" size="text-2xl"/>
-          <p className="text-[10px] text-ink-500 font-body mt-1">No mitigation applied</p>
+          <p className="label text-[10px] mb-1">Baseline SPD</p>
+          <AnimNum value={fmt(bestOrigSpd ?? baseline?.spd)} decimals={4} color="#FF4D6D" size="text-2xl"/>
+          <p className="text-[10px] text-ink-500 font-body mt-1">{bestCEO?.model || 'Model'} · no mitigation (predictions)</p>
           <div className="h-1 bg-ink-700 rounded-full mt-1 overflow-hidden">
             <div className="h-full bg-rose-400 rounded-full" style={{width:`${Math.min(spdBefore*600,100)}%`}}/>
           </div>
           <p className="text-[9px] text-ink-400 font-mono mt-1">
-            {isFairSPD(baseline?.spd) ? '✓ Already in fair zone' : '✗ Outside fair zone |SPD|≥0.05'}
+            {isFairSPD(bestOrigSpd ?? baseline?.spd) ? '✓ Already in fair zone' : '✗ Outside fair zone |SPD|≥0.05'}
           </p>
         </div>
 
@@ -395,7 +425,7 @@ function ModelRadar({ model, stages }) {
   return (
     <div className="card-glow space-y-2">
       <p className="label">{model} — Bias Profile Before vs After</p>
-      <p className="text-[11px] text-ink-400 font-body">Smaller blue = less bias across all metrics</p>
+      <p className="text-[11px] text-ink-400 font-body">Normalized 0–100 bias index (0 = perfectly fair). Smaller blue area = less bias across all metrics.</p>
       <ResponsiveContainer width="100%" height={210}>
         <RadarChart data={data}>
           <PolarGrid stroke="rgba(42,58,110,0.6)"/>
@@ -403,7 +433,7 @@ function ModelRadar({ model, stages }) {
           <PolarRadiusAxis angle={90} domain={[0,100]} tick={{fontSize:8}} tickCount={3}/>
           <Radar name="Before" dataKey="Before" stroke="#FF4D6D" fill="#FF4D6D" fillOpacity={0.15} strokeWidth={2}/>
           <Radar name="After"  dataKey="After"  stroke="#00E5FF" fill="#00E5FF" fillOpacity={0.25} strokeWidth={2}/>
-          <Tooltip contentStyle={TT} formatter={v=>[`${v.toFixed(1)} bias`]}/>
+          <Tooltip contentStyle={TT} formatter={v=>[`${v.toFixed(0)}/100 bias index`]}/>
           <Legend wrapperStyle={{fontSize:9}}/>
         </RadarChart>
       </ResponsiveContainer>
@@ -511,8 +541,14 @@ function ModelDeepDive({ mitigation_results }) {
                 <tr key={stage} className={`border-b border-ink-800 hover:bg-ink-700/40 ${isFull?'bg-cyan/10':''}`}>
                   <td className="px-3 py-2.5 whitespace-nowrap font-bold text-white" style={{borderLeft:`3px solid ${STAGE_COLOR[stage]||'#888'}`,paddingLeft:'12px'}}>
                     {isFull ? '★ ' : ''}{STAGE_LABEL[stage]||stage}
+                    {(stage === 'reweigh_adb' || stage === 'reweigh_adb_ceo') && (
+                      <span title="Model-agnostic stage — AIF360 Adversarial Debiasing (and CEO calibrated on it) is identical across all models by design"
+                        className="ml-2 text-[8px] font-mono uppercase tracking-wider text-cyan/70 border border-cyan/25 rounded px-1 py-0.5 cursor-help">shared</span>
+                    )}
                   </td>
-                  {['accuracy','balanced_accuracy','spd','di','aod','eod'].map(metric => (
+                  {['accuracy','balanced_accuracy','spd','di','aod','eod'].map(metric => {
+                    const std = v[metric + '_std']
+                    return (
                     <td key={metric} className="px-3 py-2.5 text-center">
                       {metric === 'di'
                         ? <DiCell v={v[metric]} fair={isFairDI(v[metric])} />
@@ -524,15 +560,18 @@ function ModelDeepDive({ mitigation_results }) {
                             {fmt(v[metric])}
                           </span>
                       }
+                      {std != null && (
+                        <div className="text-[8px] text-ink-500 font-mono mt-0.5" title="Standard deviation across seeds">±{fmt(std,3)}</div>
+                      )}
                     </td>
-                  ))}
+                  )})}
                 </tr>
               )
             })}
           </tbody>
         </table>
         <p className="text-[10px] text-ink-400 font-body mt-3">
-          ★ = Full pipeline result · Fair: |SPD| &lt; 0.05 · DI ∈ [0.8,1.25] · |AOD| &lt; 0.05 · |EOD| &lt; 0.05
+          ★ = Full pipeline result · Fair: |SPD| &lt; 0.05 · DI ∈ [0.8,1.25] · |AOD| &lt; 0.1 · |EOD| &lt; 0.1
           · <span title="DI shows — when one group had zero positive predictions in this test split">DI = — means undefined (zero predictions in one group)</span>
         </p>
       </div>
@@ -541,16 +580,39 @@ function ModelDeepDive({ mitigation_results }) {
 }
 
 // ─── SMOTE section ────────────────────────────────────────────────────────────
-function SmoteSection({ smote_results, baseline }) {
-  if (!smote_results || Object.keys(smote_results).length === 0)
+function SmoteSection({ smote_results, baseline, mitigation_results }) {
+  const { models, byModel, isNested } = normalizeSmote(smote_results)
+  const [selModel, setSelModel] = useState(models[0])
+
+  if (models.length === 0)
     return <div className="card text-ink-400 text-sm text-center py-12">No SMOTE variants were run in this session.</div>
 
-  const valid    = Object.entries(smote_results).filter(([,v]) => !v.error)
-  const baseSPD  = baseline?.spd || 0
-  const allWorse = valid.length > 0 && valid.every(([,v]) => Math.abs(v.spd) >= Math.abs(baseSPD))
-  const someWorse = valid.some(([,v]) => Math.abs(v.spd) > Math.abs(baseSPD))
+  // Reference SPD to judge "worse": each model's OWN no-SMOTE prediction SPD
+  // when available (apples-to-apples), else the dataset base-rate disparity.
+  const refSPD = (model) => {
+    const o = mitigation_results?.[model]?.original?.spd
+    return (o != null && !isNaN(o)) ? o : (baseline?.spd || 0)
+  }
 
-  const spdData   = valid.map(([k,v]) => ({ variant:k, SPD:parseFloat(v.spd.toFixed(4)) }))
+  // Cross-model verdict — counts every model×variant combination.
+  // A "genuine improvement" must be fairer AND not a degenerate (collapsed)
+  // model — otherwise a broken model that predicts one class gets counted as
+  // fairer. Degenerate entries never count as improvements.
+  const allEntries = smoteAllEntries(byModel)
+  const total      = allEntries.length
+  const genuine    = allEntries.filter(e => Math.abs(e.spd) < Math.abs(refSPD(e.model)) && !e.degenerate)
+  const degenCount = allEntries.filter(e => e.degenerate).length
+  const worseCount = total - genuine.length          // not-improved (worse or degenerate)
+  const allWorse   = total > 0 && genuine.length === 0
+  const someWorse  = worseCount > 0
+
+  // Active model for the charts + table
+  const activeModel = byModel[selModel] ? selModel : models[0]
+  const variantsMap = byModel[activeModel] || {}
+  const activeRef   = refSPD(activeModel)
+  const valid       = Object.entries(variantsMap).filter(([,v]) => !v.error)
+
+  const spdData   = valid.map(([k,v]) => ({ variant:k, SPD:parseFloat(Number(v.spd).toFixed(4)) }))
   const multiData = valid.map(([k,v]) => ({
     variant:k,
     '|SPD|':  parseFloat(Math.abs(v.spd).toFixed(4)),
@@ -564,7 +626,7 @@ function SmoteSection({ smote_results, baseline }) {
 
   return (
     <div className="space-y-4">
-      {/* Verdict */}
+      {/* Verdict — aggregated across all models */}
       <div className={`rounded-2xl p-5 border ${vBorder}`}>
         <div className="flex items-start gap-4">
           <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-2xl"
@@ -573,46 +635,63 @@ function SmoteSection({ smote_results, baseline }) {
           </div>
           <div>
             <p className="font-display font-black text-lg mb-1" style={{color:vColor}}>
-              {allWorse ? 'SMOTE Worsens Fairness on This Dataset'
+              {allWorse ? 'SMOTE Worsens Fairness Across All Models'
                 : someWorse ? 'SMOTE Has Mixed Fairness Effects'
                 : 'SMOTE Does Not Hurt Fairness Here'}
             </p>
             <p className="text-sm text-ink-300 font-body leading-relaxed">
               {allWorse
-                ? `All ${valid.length} SMOTE variants increased |SPD| above the dataset baseline of ${Math.abs(baseSPD).toFixed(4)}. Oversampling balances class distribution but reinforces demographic disparities rather than resolving them.`
+                ? `Every one of the ${total} model×variant combinations failed to improve fairness over the no-SMOTE reference. Oversampling balances class distribution but reinforces demographic disparities rather than resolving them.`
                 : someWorse
-                ? 'Some SMOTE variants increased bias. Oversampling has inconsistent fairness effects on this dataset.'
-                : `SMOTE variants maintained or improved fairness metrics on this dataset. Baseline |SPD| = ${Math.abs(baseSPD).toFixed(4)}.`}
+                ? `${worseCount} of ${total} model×variant combinations failed to improve fairness over the no-SMOTE reference. Oversampling has inconsistent fairness effects on this dataset.`
+                : `Across all ${total} model×variant combinations, SMOTE maintained or improved fairness on this dataset.`}
+              {degenCount > 0 && ` ⚠ ${degenCount} apparent “improvement${degenCount>1?'s':''}” came from a degenerate (collapsed-accuracy) model and do not count as real fairness gains.`}
             </p>
-            <div className="flex items-center gap-2 mt-3">
-              <span className="tag border-ink-600 text-ink-400 text-[10px]">{valid.length} variants tested</span>
-              <span className="tag border-ink-600 text-ink-400 text-[10px]">Baseline |SPD| = {Math.abs(baseSPD).toFixed(4)}</span>
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <span className="tag border-ink-600 text-ink-400 text-[10px]">{models.length} model{models.length>1?'s':''} × {Object.keys(byModel[activeModel]||{}).length} variants</span>
+              <span className="tag border-ink-600 text-ink-400 text-[10px]">{worseCount}/{total} not improved</span>
+              {degenCount > 0 && <span className="tag border-rose-500/40 text-rose-300 bg-rose-500/5 text-[10px]">{degenCount} degenerate</span>}
             </div>
           </div>
         </div>
       </div>
 
+      {/* Model selector — only when we actually have per-model results */}
+      {isNested && models.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="label !mb-0 mr-1">Model</span>
+          {models.map(m => (
+            <button key={m} onClick={() => setSelModel(m)}
+              className={`tag text-[11px] transition ${
+                m===activeModel ? 'border-cyan-400 text-cyan-300 bg-cyan-500/10'
+                : 'border-ink-600 text-ink-400 hover:border-ink-400'}`}>
+              {MI[m] ? `${MI[m]} ` : ''}{m}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card-glow space-y-3">
-          <p className="label">SPD Per SMOTE Variant</p>
-          <p className="text-[11px] text-ink-400 font-body">Amber = baseline · Red bar = worse than baseline</p>
+          <p className="label">SPD Per SMOTE Variant · {activeModel}</p>
+          <p className="text-[11px] text-ink-400 font-body">Amber = no-SMOTE reference · Red bar = worse than reference</p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={spdData} margin={{left:0,right:20,top:8,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(42,58,110,0.4)"/>
               <XAxis dataKey="variant" tick={{fontSize:8}}/>
               <YAxis tick={{fontSize:9}}/>
               <Tooltip contentStyle={TT} formatter={v=>[v?.toFixed(4)]}/>
-              <ReferenceLine y={0}      stroke="#00E5FF" strokeDasharray="4 3" label={{value:'Fair',     fill:'#00E5FF',fontSize:8,position:'right'}}/>
-              <ReferenceLine y={baseSPD} stroke="#FFB830" strokeDasharray="4 3" label={{value:'Baseline',fill:'#FFB830',fontSize:8,position:'right'}}/>
+              <ReferenceLine y={0}         stroke="#00E5FF" strokeDasharray="4 3" label={{value:'Fair',      fill:'#00E5FF',fontSize:8,position:'right'}}/>
+              <ReferenceLine y={activeRef} stroke="#FFB830" strokeDasharray="4 3" label={{value:'No SMOTE', fill:'#FFB830',fontSize:8,position:'right'}}/>
               <Bar dataKey="SPD" radius={[4,4,0,0]}>
-                {spdData.map((d,i) => <Cell key={i} fill={Math.abs(d.SPD)>Math.abs(baseSPD)?'#FF4D6D':'#00E676'}/>)}
+                {spdData.map((d,i) => <Cell key={i} fill={Math.abs(d.SPD)>Math.abs(activeRef)?'#FF4D6D':'#00E676'}/>)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card-glow space-y-3">
-          <p className="label">All Fairness Metrics by Variant</p>
+          <p className="label">All Fairness Metrics by Variant · {activeModel}</p>
           <p className="text-[11px] text-ink-400 font-body">Lower = less bias across all dimensions</p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={multiData} margin={{left:0,right:8,top:8,bottom:0}}>
@@ -630,9 +709,9 @@ function SmoteSection({ smote_results, baseline }) {
         </div>
       </div>
 
-      {/* SMOTE table */}
+      {/* SMOTE table for the active model */}
       <div className="card-glow overflow-x-auto">
-        <p className="label mb-3">SMOTE Variants — Full Metric Table</p>
+        <p className="label mb-3">SMOTE Variants — Full Metric Table · {activeModel}</p>
         <table className="w-full text-[11px] font-mono">
           <thead>
             <tr style={{background:'rgba(0,229,255,0.05)'}}>
@@ -643,24 +722,32 @@ function SmoteSection({ smote_results, baseline }) {
           </thead>
           <tbody>
             <tr className="border-b border-ink-800 bg-ink-700/40">
-              <td className="px-3 py-2 font-bold text-amber-400">No SMOTE (Baseline)</td>
-              <td className="px-3 py-2 text-ink-500">—</td>
-              <td className="px-3 py-2 text-ink-500">—</td>
-              <td className="px-3 py-2 text-amber-400 font-bold">{fmt(baseline?.spd)}</td>
-              <td className="px-3 py-2 text-amber-400 font-bold">{fmt(baseline?.di)}</td>
-              <td className="px-3 py-2 text-ink-500">—</td>
-              <td className="px-3 py-2 text-ink-500">—</td>
+              <td className="px-3 py-2 font-bold text-amber-400">No SMOTE ({mitigation_results?.[activeModel]?.original ? `${activeModel} original` : 'baseline'})</td>
+              <td className="px-3 py-2 text-ink-500">{fmt(mitigation_results?.[activeModel]?.original?.accuracy)}</td>
+              <td className="px-3 py-2 text-ink-500">{fmt(mitigation_results?.[activeModel]?.original?.balanced_accuracy)}</td>
+              <td className="px-3 py-2 text-amber-400 font-bold">{fmt(activeRef)}</td>
+              <td className="px-3 py-2 text-amber-400 font-bold">{fmt(mitigation_results?.[activeModel]?.original?.di ?? baseline?.di)}</td>
+              <td className="px-3 py-2 text-ink-500">{fmt(mitigation_results?.[activeModel]?.original?.aod)}</td>
+              <td className="px-3 py-2 text-ink-500">{fmt(mitigation_results?.[activeModel]?.original?.eod)}</td>
             </tr>
-            {Object.entries(smote_results).map(([variant, vals]) => (
-              <tr key={variant} className="border-b border-ink-800 hover:bg-ink-700/40">
-                <td className="px-3 py-2 font-bold text-ink-200">{variant}</td>
+            {Object.entries(variantsMap).map(([variant, vals]) => (
+              <tr key={variant} className={`border-b border-ink-800 hover:bg-ink-700/40 ${vals.degenerate ? 'bg-rose-500/5' : ''}`}>
+                <td className="px-3 py-2 font-bold text-ink-200 whitespace-nowrap">
+                  {vals.degenerate && (
+                    <span title={vals.degenerate_reason || 'Degenerate model — fairness metrics not meaningful'}
+                      className="text-rose-400 mr-1 cursor-help">⚠</span>
+                  )}
+                  {variant}
+                </td>
                 {vals.error
                   ? <td colSpan={6} className="px-3 py-2 text-rose-400 text-xs">{vals.error}</td>
                   : ['accuracy','balanced_accuracy','spd','di','aod','eod'].map(m => (
                     <td key={m} className="px-3 py-2">
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                        (m==='spd' && Math.abs(vals[m])>Math.abs(baseSPD)) ||
-                        (m==='di'  && Math.abs((vals[m]??1)-1)>Math.abs((baseline?.di??1)-1))
+                        // Degenerate → never show a metric as a green "win"; mark neutral-warn
+                        vals.degenerate ? 'bg-rose-500/10 text-rose-300/80 border border-rose-500/20'
+                        : (m==='spd' && Math.abs(vals[m])>Math.abs(activeRef)) ||
+                          (m==='di'  && Math.abs((vals[m]??1)-1)>Math.abs((mitigation_results?.[activeModel]?.original?.di ?? baseline?.di ?? 1)-1))
                           ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-ink-700/50 text-ink-100'
                       }`}>
                         {fmt(vals[m])}
@@ -688,13 +775,21 @@ function AnalysisInsights({ results }) {
     return (!b || Math.abs(ceo.spd) < Math.abs(b.spd)) ? { ...ceo, model:m } : b
   }, null)
 
-  const spdBefore = Math.abs(baseline?.spd || 0)
+  // Best model's own baseline prediction SPD (not dataset base-rate) for an
+  // apples-to-apples reduction figure.
+  const bestOrigSpd = bestCEO ? mitigation_results[bestCEO.model]?.original?.spd : null
+  const spdBefore = Math.abs((bestOrigSpd ?? baseline?.spd) || 0)
   const spdAfter  = Math.abs(bestCEO?.spd  || 0)
   const spdRed    = spdBefore > 0 ? ((spdBefore-spdAfter)/spdBefore*100).toFixed(1) : '0'
 
-  const allSmoteWorse = smote_results &&
-    Object.values(smote_results).filter(v=>!v.error).length > 0 &&
-    Object.values(smote_results).filter(v=>!v.error).every(v=>Math.abs(v.spd)>=spdBefore)
+  const smoteEntries = smoteAllEntries(normalizeSmote(smote_results).byModel)
+  const allSmoteWorse = smoteEntries.length > 0 &&
+    smoteEntries.every(e => {
+      const ref = mitigation_results?.[e.model]?.original?.spd
+      const r   = (ref != null && !isNaN(ref)) ? Math.abs(ref) : spdBefore
+      // Degenerate models never count as a real fairness improvement
+      return e.degenerate || Math.abs(e.spd) >= r
+    })
 
   const bestAccM = models.reduce((b,m) => {
     const a = mitigation_results[m]?.original?.accuracy || 0
@@ -713,7 +808,7 @@ function AnalysisInsights({ results }) {
     {
       icon:'📉', color:'#00E5FF',
       title:`${spdRed}% Statistical Bias Reduced`,
-      body:`SPD reduced from ${fmt(baseline?.spd)} → ${fmt(bestCEO?.spd)} using the full 3-stage pipeline. Best model: ${bestCEO?.model}.`,
+      body:`${bestCEO?.model} SPD reduced from ${fmt(bestOrigSpd ?? baseline?.spd)} (baseline predictions) → ${fmt(bestCEO?.spd)} using the full 3-stage pipeline.`,
     },
     {
       icon: isFairSPD(bestCEO?.spd)?'✅':'🎯', color: isFairSPD(bestCEO?.spd)?'#00E676':'#FFB830',
@@ -735,7 +830,7 @@ function AnalysisInsights({ results }) {
     allSmoteWorse && {
       icon:'⚠️', color:'#FF4D6D',
       title:'SMOTE Does Not Improve Fairness on This Dataset',
-      body:`All ${Object.keys(smote_results).filter(k=>!smote_results[k].error).length} SMOTE variants increased |SPD| above the baseline. Class oversampling addresses imbalance but does not mitigate demographic bias.`,
+      body:`All ${smoteEntries.length} SMOTE model×variant combinations increased |SPD| above the no-SMOTE reference. Class oversampling addresses imbalance but does not mitigate demographic bias.`,
     },
     {
       icon:'📊', color:'#00E676',
@@ -955,19 +1050,31 @@ ${(baseline?.warnings||[]).map(w => `<div class="warn">⚠ ${w.msg}</div>`).join
     }).join('')
   }).join('')}
 </table>
+<p style="font-size:11px;color:#666;margin:-8px 0 16px">
+  Note: <em>Reweigh+ADB</em> uses AIF360 Adversarial Debiasing, which trains a standalone classifier independent
+  of the base model, and CEO is calibrated on its output. So the <em>Reweigh+ADB</em> and <em>Full Pipeline (CEO)</em>
+  rows are identical across all models by design — the base model only affects the Baseline and Reweighing stages.
+</p>
 
 <h2>SMOTE Oversampling Results</h2>
-${Object.keys(smote_results||{}).length === 0
-  ? '<p style="color:#666;font-size:12px">No SMOTE variants were run.</p>'
-  : `<table>
-  <tr><th>Variant</th><th>Accuracy</th><th>SPD</th><th>DI</th><th>AOD</th><th>EOD</th></tr>
-  <tr style="background:#fff7ed"><td><em>Baseline (no SMOTE)</em></td><td>—</td>
-    <td>${fmt(baseline?.spd)}</td><td>${fmt(baseline?.di)}</td><td>—</td><td>—</td></tr>
-  ${Object.entries(smote_results||{}).map(([k,v]) => v.error
-    ? `<tr><td>${k}</td><td colspan="5" style="color:#dc2626">${v.error}</td></tr>`
-    : `<tr><td>${k}</td><td>${fmt(v.accuracy,4)}</td><td>${fmt(v.spd)}</td><td>${fmt(v.di)}</td><td>${fmt(v.aod)}</td><td>${fmt(v.eod)}</td></tr>`
-  ).join('')}
-</table>`}
+${(() => {
+  const { models, byModel } = normalizeSmote(smote_results)
+  if (models.length === 0)
+    return '<p style="color:#666;font-size:12px">No SMOTE variants were run.</p>'
+  return `<table>
+  <tr><th>Model</th><th>Variant</th><th>Accuracy</th><th>SPD</th><th>DI</th><th>AOD</th><th>EOD</th></tr>
+  ${models.map(model => {
+    const ref = mitigation_results?.[model]?.original
+    const baseRow = `<tr style="background:#fff7ed"><td><strong>${model}</strong></td><td><em>No SMOTE</em></td>
+      <td>${fmt(ref?.accuracy,4)}</td><td>${fmt(ref?.spd ?? baseline?.spd)}</td><td>${fmt(ref?.di ?? baseline?.di)}</td><td>${fmt(ref?.aod)}</td><td>${fmt(ref?.eod)}</td></tr>`
+    const variantRows = Object.entries(byModel[model]||{}).map(([k,v]) => v.error
+      ? `<tr><td></td><td>${k}</td><td colspan="5" style="color:#dc2626">${v.error}</td></tr>`
+      : `<tr><td></td><td>${k}</td><td>${fmt(v.accuracy,4)}</td><td>${fmt(v.spd)}</td><td>${fmt(v.di)}</td><td>${fmt(v.aod)}</td><td>${fmt(v.eod)}</td></tr>`
+    ).join('')
+    return baseRow + variantRows
+  }).join('')}
+</table>`
+})()}
 
 ${results.feature_importance?.length > 0 ? `
 <h2>Feature Importance (Top 10)</h2>
@@ -995,18 +1102,44 @@ ${results.feature_importance?.length > 0 ? `
 
 <div class="footer">
   Generated by FairLens · Fairness detection and mitigation framework ·
-  Fair zones: |SPD| &lt; 0.05 · DI ∈ [0.8, 1.25] · |AOD| &lt; 0.05 · |EOD| &lt; 0.05
+  Fair zones: |SPD| &lt; 0.05 · DI ∈ [0.8, 1.25] · |AOD| &lt; 0.1 · |EOD| &lt; 0.1
 </div>
 
 </body>
 </html>`
 
-  // Open in new window and trigger print dialog
-  const win = window.open('', '_blank')
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 500)
+  // Render into a hidden iframe and invoke the browser's print-to-PDF.
+  // Using an iframe (instead of window.open) avoids popup blockers, which
+  // silently return null and break the report — the JSON export still works
+  // because it uses a normal download link, hence "JSON works, PDF doesn't".
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+  iframe.srcdoc = html
+
+  const cleanup = () => { if (document.body.contains(iframe)) document.body.removeChild(iframe) }
+
+  iframe.onload = () => {
+    try {
+      const cw = iframe.contentWindow
+      cw.focus()
+      cw.onafterprint = cleanup
+      cw.print()
+      // Safety cleanup in case afterprint never fires (some browsers)
+      setTimeout(cleanup, 60000)
+    } catch (err) {
+      // Last-resort fallback: try a new tab (may be popup-blocked)
+      cleanup()
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(html); win.document.close(); win.focus()
+        setTimeout(() => win.print(), 400)
+      } else {
+        alert('Could not open the print dialog. Please allow pop-ups for this site and try again, or use “Export JSON”.')
+      }
+    }
+  }
+
+  document.body.appendChild(iframe)
 }
 
 export default function StepResults({ results, config, onReset }) {
@@ -1037,6 +1170,23 @@ export default function StepResults({ results, config, onReset }) {
             Target: <span className="text-cyan font-mono">{config.target_column}</span>
             <span className="text-ink-400 mx-2">·</span>
             <span className="text-ink-400">{models.length} models · {baseline?.total_rows?.toLocaleString()} rows</span>
+            {results.n_seeds > 1 && (
+              <>
+                <span className="text-ink-400 mx-2">·</span>
+                <span className="tag border-cyan/30 text-cyan bg-cyan/10 text-[10px]" title="Metrics are the mean over multiple seeds; ± values are standard deviation">
+                  averaged over {results.n_seeds} seeds (mean ± std)
+                </span>
+              </>
+            )}
+            {results.config?.mitigation_steps?.length > 0 && (
+              <>
+                <span className="text-ink-400 mx-2">·</span>
+                <span className="tag border-amber/30 text-amber bg-amber/5 text-[10px]"
+                  title="Bias mitigation pipeline applied, in order.">
+                  {results.config.mitigation_steps.join(' → ')}
+                </span>
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -1086,6 +1236,22 @@ export default function StepResults({ results, config, onReset }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ADB note — only ADB is model-agnostic; the final stage is per-model */}
+      {models.some(m => mitigation_results[m]?.reweigh_adb) && (
+        <div className="flex items-start gap-3 rounded-xl p-4 border border-cyan/25 bg-cyan/5 text-sm font-body">
+          <span className="text-xl flex-shrink-0">ℹ️</span>
+          <div>
+            <p className="font-bold text-cyan mb-0.5">About the Reweigh+ADB and Full-Pipeline stages</p>
+            <p className="text-xs text-ink-300 opacity-90">
+              AIF360's Adversarial Debiasing trains its own standalone classifier <strong>independent of the
+              base model</strong>, and CEO is calibrated on that classifier's output. So the <em>Reweigh+ADB</em>
+              and <em>Full Pipeline (CEO)</em> rows are <strong>identical across all models by design</strong> —
+              the choice of model (RF / XGBoost / LightGBM / TabNet) only affects the Baseline and Reweighing stages.
+            </p>
+          </div>
         </div>
       )}
 
@@ -1148,7 +1314,7 @@ export default function StepResults({ results, config, onReset }) {
 
       {tab==='smote' && (
         <div className="fade-up">
-          <SmoteSection smote_results={smote_results} baseline={baseline}/>
+          <SmoteSection smote_results={smote_results} baseline={baseline} mitigation_results={mitigation_results}/>
         </div>
       )}
 

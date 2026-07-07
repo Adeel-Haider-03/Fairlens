@@ -28,6 +28,12 @@ def main():
     import tensorflow as tf
     tf.compat.v1.disable_eager_execution()
 
+    # Seed so ADB is reproducible for a given engine seed (and varies across
+    # seeds during multi-seed averaging). Without this ADB is nondeterministic.
+    seed = int(p.get("seed", 42))
+    np.random.seed(seed)
+    tf.compat.v1.set_random_seed(seed)
+
     from aif360.datasets import BinaryLabelDataset
     from aif360.algorithms.inprocessing import AdversarialDebiasing
 

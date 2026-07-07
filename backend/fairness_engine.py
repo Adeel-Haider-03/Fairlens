@@ -46,7 +46,8 @@ RANDOM_STATE = 42
 class FairnessEngine:
     def __init__(self, df, target_column, protected_attribute,
                  privileged_value, feature_columns, test_size=0.3,
-                 favorable_value=None, protected_threshold=None):
+                 favorable_value=None, protected_threshold=None,
+                 random_state=RANDOM_STATE):
         self.df                  = df.copy()
         self.target_column       = target_column
         self.protected_attribute = protected_attribute
@@ -55,6 +56,9 @@ class FairnessEngine:
         self.protected_threshold  = protected_threshold   # numeric split threshold for continuous attributes
         self.feature_columns     = feature_columns
         self.test_size           = test_size
+        # Seed for this engine instance — varied across seeds for multi-seed
+        # averaging so we can report mean ± std and quantify run-to-run variance.
+        self.random_state        = random_state
         self.privileged_groups   = [{protected_attribute: 1}]
         self.unprivileged_groups = [{protected_attribute: 0}]
         self._prepare_data()
@@ -231,12 +235,12 @@ class FairnessEngine:
 
         # Step 6: Train / val / test split
         train_val, test_df = train_test_split(
-            df_work, test_size=self.test_size, random_state=RANDOM_STATE,
+            df_work, test_size=self.test_size, random_state=self.random_state,
             stratify=df_work[self.target_column]
         )
         val_frac = 0.1 / (1.0 - self.test_size)
         train_df, val_df = train_test_split(
-            train_val, test_size=val_frac, random_state=RANDOM_STATE,
+            train_val, test_size=val_frac, random_state=self.random_state,
             stratify=train_val[self.target_column]
         )
 
@@ -377,13 +381,39 @@ class FairnessEngine:
         priv_mask   = prot == 1
         unpriv_mask = prot == 0
 
+        acc = float(accuracy_score(y_true, y_pred))
+        bal = float(balanced_accuracy_score(y_true, y_pred))
+
+        # ── Degenerate-model guard ────────────────────────────────────────
+        # A model can "cheat" fairness by collapsing toward one class
+        # (e.g. predicting positive for almost everyone) — SPD/DI then look
+        # great while the model is useless. We flag such results so the UI /
+        # SMOTE verdict never presents them as a genuine fairness improvement.
+        true_pos_rate = float(np.mean(y_true)) if len(y_true) else 0.0
+        majority_acc  = max(true_pos_rate, 1.0 - true_pos_rate)   # always-majority baseline
+        pred_pos_rate = float(np.mean(y_pred)) if len(y_pred) else 0.0
+
+        degenerate, reason = False, None
+        if acc < majority_acc - 1e-9:
+            degenerate = True
+            reason = (f"Accuracy {acc:.3f} is below the majority-class baseline "
+                      f"({majority_acc:.3f}) — model is broken; fairness metrics not meaningful")
+        elif bal < 0.55:
+            degenerate = True
+            reason = f"Balanced accuracy {bal:.2f} ≈ random — fairness metrics not meaningful"
+        elif pred_pos_rate < 0.02 or pred_pos_rate > 0.98:
+            degenerate = True
+            reason = f"Model predicts a single class {pred_pos_rate:.0%} of the time"
+
         return {
-            "accuracy":          round(float(accuracy_score(y_true, y_pred)), 4),
-            "balanced_accuracy": round(float(balanced_accuracy_score(y_true, y_pred)), 4),
+            "accuracy":          round(acc, 4),
+            "balanced_accuracy": round(bal, 4),
             "spd": safe(bm.statistical_parity_difference()),
             "di":  safe(bm.disparate_impact()),
             "aod": safe(cm.average_odds_difference()),
             "eod": safe(cm.equal_opportunity_difference()),
+            "degenerate":        degenerate,
+            "degenerate_reason": reason,
             "cm_privileged":   group_cm(priv_mask),
             "cm_unprivileged": group_cm(unpriv_mask),
         }
@@ -395,14 +425,14 @@ class FairnessEngine:
     def _get_model(self, name):
         if name == "RF":
             return RandomForestClassifier(
-                n_estimators=100, random_state=RANDOM_STATE, n_jobs=-1)
+                n_estimators=100, random_state=self.random_state, n_jobs=-1)
         elif name == "XGBoost":
             return xgb.XGBClassifier(
-                n_estimators=100, random_state=RANDOM_STATE,
+                n_estimators=100, random_state=self.random_state,
                 eval_metric="logloss", verbosity=0)
         elif name == "LightGBM":
             return lgb.LGBMClassifier(
-                n_estimators=100, random_state=RANDOM_STATE, verbose=-1)
+                n_estimators=100, random_state=self.random_state, verbose=-1)
         elif name == "TabNet":
             return None
         raise ValueError(f"Unknown model: {name}")
@@ -502,6 +532,7 @@ class FairnessEngine:
             "protected_attribute":  self.protected_attribute,
             "target_column":        self.target_column,
             "scope_name":           scope_name,
+            "seed":                 self.random_state,
         }
         with open(tmp_in.name, "wb") as f:
             pickle.dump(payload, f)
@@ -529,6 +560,9 @@ class FairnessEngine:
                             predict_Xs, predict_prots, predict_ys):
         tf.compat.v1.reset_default_graph()
         tf.compat.v1.disable_eager_execution()
+        # Seed TF/np so ADB is reproducible per engine seed (varies across seeds)
+        np.random.seed(self.random_state)
+        tf.compat.v1.set_random_seed(self.random_state)
         train_ds = self._make_aif360(
             self.X_train_scaled, self.prot_train, self.y_train, instance_weights
         )
@@ -565,7 +599,7 @@ class FairnessEngine:
                 print("[Feature importance] Skipped — training set has only one class")
                 return []
             from sklearn.ensemble import RandomForestClassifier
-            rf = RandomForestClassifier(n_estimators=50, random_state=RANDOM_STATE, n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators=50, random_state=self.random_state, n_jobs=-1)
             rf.fit(self.X_train, self.y_train)
             importances = rf.feature_importances_
             feat_names  = self.feature_columns + [self.protected_attribute]
@@ -577,6 +611,16 @@ class FairnessEngine:
             return []
 
     def compute_baseline_metrics(self):
+        """Dataset-level base-rate disparity.
+
+        IMPORTANT: SPD/DI here are computed on the TRUE labels of the full
+        dataset, i.e. they measure disparity in the *data's* base rates
+        (dataset bias), NOT a model's predictions. This is distinct from each
+        model's `original` stage, whose SPD/DI are prediction disparities on
+        the held-out test set. The two are related but not the same quantity —
+        `metric_basis` in the returned payload documents this so the UI/report
+        never conflates them.
+        """
         y_all    = np.concatenate([self.y_train, self.y_val, self.y_test])
         prot_all = np.concatenate([self.prot_train, self.prot_val, self.prot_test])
         ds = self._prot_label_aif360(prot_all, y_all)
@@ -600,6 +644,10 @@ class FairnessEngine:
         return {
             "spd":        round(float(bm.statistical_parity_difference()), 4),
             "di":         round(float(bm.disparate_impact()), 4),
+            # Documents that spd/di above are dataset base-rate disparities
+            # (true labels), not model-prediction disparities. See docstring.
+            "metric_basis": "dataset_base_rate_true_labels",
+            "metric_basis_label": "Dataset base-rate disparity (true labels, full dataset)",
             "total_rows": len(y_all),
             "class_distribution": {0: len(y_all) - n_pos, 1: n_pos},
             "group_sizes": group_sizes,
@@ -613,27 +661,84 @@ class FairnessEngine:
     # SMOTE
     # ─────────────────────────────────────────────────────────────────────────
 
-    def run_smote_experiments(self, variants, progress_callback=None):
-        results = {}
-        for i, variant in enumerate(variants):
-            if progress_callback:
-                progress_callback(f"SMOTE: {variant}", i / len(variants))
+    def _train_predict_test(self, model_name, X_tr, y_tr):
+        """Train `model_name` on (X_tr, y_tr) and return test-set predictions.
+
+        Used by the SMOTE matrix, which trains each model on *resampled* data
+        (so it cannot reuse the baseline _fit_sklearn/_fit_tabnet paths that
+        read self.X_train directly).
+        """
+        classes = np.unique(y_tr)
+        if len(classes) < 2:
+            # Degenerate resample — return majority baseline
+            return np.full(len(self.y_test), int(classes[0]))
+        if model_name == "TabNet":
+            from pytorch_tabnet.tab_model import TabNetClassifier
+            from torch.optim import Adam
+            clf = TabNetClassifier(seed=self.random_state, verbose=0,
+                                   n_d=16, n_a=16, n_steps=3,
+                                   optimizer_fn=Adam,
+                                   optimizer_params={"lr": 2e-2})
+            clf.fit(X_tr.astype(np.float32), y_tr,
+                    max_epochs=50, patience=10,
+                    batch_size=1024, virtual_batch_size=128)
+            return clf.predict(self.X_test.astype(np.float32))
+        model = self._get_model(model_name)
+        model.fit(X_tr, y_tr)
+        return model.predict(self.X_test)
+
+    def run_smote_experiments(self, variants, models=None, progress_callback=None):
+        """Evaluate how SMOTE variants affect fairness, across every model.
+
+        Returns a nested dict: {model_name: {variant: metrics}}. This lets the
+        report make the stronger cross-model claim ("SMOTE worsens fairness for
+        N of M model x variant combinations") rather than showing a single
+        probe model.
+
+        SMOTE is fit on the TRAINING split only (self.X_train); the test set is
+        never resampled, so there is no train/test leakage. Each model is
+        retrained on the resampled training data and evaluated on the same
+        held-out test set used everywhere else.
+        """
+        if not models:
+            models = ["RF"]
+
+        # Resample once per variant, then reuse across models for consistency
+        resampled = {}
+        for variant in variants:
             try:
-                X_res, y_res = SMOTE_MAP[variant](RANDOM_STATE).fit_resample(
+                resampled[variant] = SMOTE_MAP[variant](self.random_state).fit_resample(
                     self.X_train, self.y_train
                 )
             except Exception:
                 try:
-                    X_res, y_res = SMOTE(random_state=RANDOM_STATE).fit_resample(
+                    resampled[variant] = SMOTE(random_state=self.random_state).fit_resample(
                         self.X_train, self.y_train
                     )
                 except Exception as e2:
-                    results[variant] = {"error": str(e2)}
+                    resampled[variant] = e2   # store the error
+
+        results = {}
+        total = max(len(models) * len(variants), 1)
+        step  = 0
+        for model_name in models:
+            results[model_name] = {}
+            for variant in variants:
+                if progress_callback:
+                    progress_callback(f"SMOTE: {model_name} / {variant}", step / total)
+                step += 1
+                res = resampled.get(variant)
+                if isinstance(res, Exception):
+                    results[model_name][variant] = {"error": str(res)}
                     continue
-            model = self._get_model("RF")
-            model.fit(X_res, y_res)
-            y_pred = model.predict(self.X_test)
-            results[variant] = self._compute_metrics(self.prot_test, self.y_test, y_pred)
+                X_res, y_res = res
+                try:
+                    y_pred = self._train_predict_test(model_name, X_res, y_res)
+                    results[model_name][variant] = self._compute_metrics(
+                        self.prot_test, self.y_test, y_pred
+                    )
+                except Exception as e:
+                    results[model_name][variant] = {"error": str(e)}
         return results
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -662,9 +767,11 @@ class FairnessEngine:
 
         # ── Reweighing weights ────────────────────────────────────────────
         needs_rw = any(s in mitigation_steps for s in ["Reweighing", "ADB", "CEO"])
-        rw_weights  = None
-        y_scr_te_rw = y_scr_te
-        y_scr_va_rw = y_scr_va
+        rw_weights   = None
+        y_scr_te_rw  = y_scr_te
+        y_scr_va_rw  = y_scr_va
+        y_pred_te_rw = y_pred_te     # fall back to baseline preds if reweigh not run
+        y_pred_va_rw = y_pred_va
 
         if needs_rw:
             prog("Computing Reweighing weights", 0.15)
@@ -712,56 +819,77 @@ class FairnessEngine:
                 self.prot_test, self.y_test, adb_te["labels"]
             )
 
-        # ── Stage 4: CEO ──────────────────────────────────────────────────
-        # KEY FIX: calibrate CEO on ADB's debiased scores, not reweigh scores.
-        # Using reweigh scores for CEO ignores everything ADB learned.
+        # ── Stage 4: CEO — Calibrated Equalised Odds (paper's post-processing)
+        # Faithful to Loganathan et al.: CEO is calibrated on ADB's debiased
+        # scores (or the reweighed model's scores if ADB was not run). The cost
+        # constraint (fnr/fpr/weighted) is selected on the VALIDATION set only —
+        # never the test set — to avoid leakage. A do-no-harm guard keeps the
+        # Reweighing result if CEO cannot produce a usable (non-degenerate)
+        # model, e.g. on small datasets like German where CEO collapses accuracy.
         if "CEO" in mitigation_steps:
             prog("Calibrated Equalised Odds", 0.8)
+
+            reweigh_metrics = results.get("reweigh") or self._compute_metrics(
+                self.prot_test, self.y_test, y_pred_te_rw
+            )
+
+            def _make_scored(prot, y_true, scores):
+                ds   = self._prot_label_aif360(prot, y_true)
+                pred = ds.copy()
+                pred.scores = np.clip(np.asarray(scores, dtype=float), 0.001, 0.999).reshape(-1, 1)
+                pred.labels = (pred.scores >= 0.5).astype(float)
+                return ds, pred
+
+            # CEO calibrates on ADB's output when ADB ran (the paper's pipeline),
+            # else on the reweighed model's scores.
+            val_scores  = adb_va["scores"] if adb_va is not None else y_scr_va_rw
+            test_scores = adb_te["scores"] if adb_te is not None else y_scr_te_rw
+
+            # Do-no-harm guard 1: CEO calibration needs enough validation samples
+            # in both groups; on tiny groups (e.g. German) it collapses.
+            min_val_group = int(min((self.prot_val == 1).sum(),
+                                    (self.prot_val == 0).sum()))
             try:
-                def make_scored(prot, y_true, scores):
-                    ds = self._prot_label_aif360(prot, y_true)
-                    pred = ds.copy()
-                    pred.scores = np.clip(scores, 0.001, 0.999).reshape(-1, 1)
-                    pred.labels = (pred.scores >= 0.5).astype(float)
-                    return ds, pred
+                if min_val_group < 50:
+                    print(f"[CEO] skipped — smallest validation group {min_val_group} "
+                          f"(<50); keeping Reweighing (do-no-harm)")
+                    results["reweigh_adb_ceo"] = reweigh_metrics
+                else:
+                    val_true,  val_pred  = _make_scored(self.prot_val,  self.y_val,  val_scores)
+                    test_true, test_pred = _make_scored(self.prot_test, self.y_test, test_scores)
 
-                # Use ADB scores if available, else fall back to reweigh scores
-                val_scores  = adb_va["scores"]  if adb_va  is not None else y_scr_va_rw
-                test_scores = adb_te["scores"]  if adb_te  is not None else y_scr_te_rw
+                    best_constraint, best_val_abs_spd, best_test = None, float("inf"), None
+                    for constraint in ["fnr", "fpr", "weighted"]:
+                        try:
+                            ceo = CalibratedEqOddsPostprocessing(
+                                privileged_groups=self.privileged_groups,
+                                unprivileged_groups=self.unprivileged_groups,
+                                cost_constraint=constraint, seed=self.random_state,
+                            )
+                            ceo.fit(val_true, val_pred)
+                            # Select constraint on VALIDATION only (no leakage)
+                            y_val_ceo = ceo.predict(val_pred).labels.ravel().astype(int)
+                            m_val = self._compute_metrics(self.prot_val, self.y_val, y_val_ceo)
+                            if (not m_val.get("degenerate") and m_val["spd"] is not None
+                                    and abs(m_val["spd"]) < best_val_abs_spd):
+                                best_val_abs_spd = abs(m_val["spd"])
+                                best_constraint  = constraint
+                                y_test_ceo = ceo.predict(test_pred).labels.ravel().astype(int)
+                                best_test  = self._compute_metrics(
+                                    self.prot_test, self.y_test, y_test_ceo
+                                )
+                        except Exception:
+                            continue
 
-                val_true,  val_pred  = make_scored(
-                    self.prot_val,  self.y_val,  val_scores
-                )
-                test_true, test_pred = make_scored(
-                    self.prot_test, self.y_test, test_scores
-                )
-
-                best_ceo     = None
-                best_abs_spd = float("inf")
-
-                for constraint in ["fnr", "fpr", "weighted"]:
-                    try:
-                        ceo = CalibratedEqOddsPostprocessing(
-                            privileged_groups=self.privileged_groups,
-                            unprivileged_groups=self.unprivileged_groups,
-                            cost_constraint=constraint,
-                            seed=RANDOM_STATE,
-                        )
-                        ceo.fit(val_true, val_pred)
-                        ceo_pred = ceo.predict(test_pred)
-                        y_ceo = ceo_pred.labels.ravel().astype(int)
-                        m = self._compute_metrics(self.prot_test, self.y_test, y_ceo)
-                        if m["accuracy"] < 0.999 and m["spd"] is not None and abs(m["spd"]) < best_abs_spd:
-                            best_abs_spd = abs(m["spd"])
-                            best_ceo = m
-                    except Exception:
-                        continue
-
-                results["reweigh_adb_ceo"] = best_ceo or results.get(
-                    "reweigh", results["original"]
-                )
-            except Exception:
-                results["reweigh_adb_ceo"] = results.get("reweigh", results["original"])
+                    if best_constraint is not None:
+                        print(f"[CEO] constraint='{best_constraint}' "
+                              f"(val |SPD|={best_val_abs_spd:.4f})")
+                    # Do-no-harm guard 2: if no constraint gave a usable result,
+                    # keep the Reweighing model rather than a degenerate CEO one.
+                    results["reweigh_adb_ceo"] = best_test or reweigh_metrics
+            except Exception as e:
+                print(f"[CEO] failed: {e}")
+                results["reweigh_adb_ceo"] = reweigh_metrics
 
         return results
 

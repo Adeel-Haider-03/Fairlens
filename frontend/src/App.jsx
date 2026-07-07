@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Header from './components/Header'
 import StepBar from './components/StepBar'
 import StepUpload from './components/StepUpload'
@@ -30,6 +30,12 @@ export default function App() {
   const back = () => setStep(s => Math.max(s - 1, 1))
   const goTo = (n) => setStep(n)
 
+  // Reset scroll to top on every step change — otherwise the next section
+  // opens at whatever scroll position the previous one left behind.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [step])
+
   // Load a session directly from the sessions panel → jump straight to results
   const handleLoadSession = (sessionResults) => {
     setResults(sessionResults)
@@ -47,6 +53,8 @@ export default function App() {
       models:           cfg.models           || [],
       mitigation_steps: cfg.mitigation_steps || [],
       smote_variants:   cfg.smote_variants   || [],
+      test_size:        cfg.test_size        ?? 0.3,
+      n_seeds:          cfg.n_seeds          || 1,
     })
     setStep(5)
   }

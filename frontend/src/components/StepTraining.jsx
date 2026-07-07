@@ -45,6 +45,7 @@ export default function StepTraining({ uploadData, config, modelConfig, onDone, 
     mitigation_steps:    modelConfig.mitigation_steps,
     smote_variants:      modelConfig.smote_variants,
     test_size:           modelConfig.test_size,
+    n_seeds:             modelConfig.n_seeds || 1,
     session_name:        sessionName || suggestedName(),
   })
 
