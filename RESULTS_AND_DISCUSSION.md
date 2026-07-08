@@ -176,13 +176,50 @@ would break the model.
 | Dataset | Protected | Baseline DI | Final SPD | Final DI | Final Acc | Notes |
 |---|---|---|---|---|---|---|
 | Adult Census | Race | 0.60 | −0.035 ±0.038 | 0.796 ±0.223 | 0.839 | SPD/AOD/EOD fair; DI borderline |
-| COMPAS | Race | 1.22 | […] | […] | […] | baseline biased (non-Caucasian over-flagged) |
-| German Credit | Age | […] | do-no-harm → Reweighing | […] | ~0.76 | CEO skipped (small val group) |
-| Taiwan Credit | Sex | […] | […] | […] | […] | near-fair baseline |
+| COMPAS | Race | 1.22 | 0.027 ±0.185 | **1.384 ±0.943** | 0.652 | DI over-corrected (>1.25) and highly unstable; Reweighing-alone was fairer (DI 1.15 ±0.08) |
+| German Credit | Age | 1.46 | 0.06–0.11 (unfair) | 1.26–1.63 (unfair) | 0.74–0.76 | ADB collapsed (degenerate, acc 0.58); do-no-harm kept Reweighing; still not fair; TabNet degenerate |
+| Taiwan Credit | Sex | 0.86 | 0.005 ±0.024 | 1.082 ±0.306 | 0.809 | baseline already near-fair; final all-4-fair on mean but DI unstable |
 
-*Insert your faithful 5-seed numbers for COMPAS, German, and Taiwan here. On
-COMPAS the group base rates are closer, so mitigation is expected to bring all
-four metrics near-fair; on German the do-no-harm guard is expected to trigger.*
+**German (detail).** German is tiny (1,000 rows; the unprivileged group is only
+149, ~15 in validation). Here **ADB collapsed into a degenerate model**
+(accuracy 0.582, below the 0.70 majority-class baseline; DI std 0.63) — it
+actively destroyed the classifier. The **do-no-harm guard correctly caught this**
+and retained each model's Reweighing result instead of the broken ADB/CEO output.
+This validates the guard: without it, a 0.58-accuracy broken model would have been
+reported as "fair". However, even the retained Reweighing result does not reach
+fairness (DI 1.26–1.63, SPD 0.06–0.11), and TabNet is degenerate throughout
+(deep networks fail on 1,000 rows).
+
+**Taiwan (detail).** Taiwan was **already essentially fair at baseline**
+(DI 0.86, SPD −0.03; SEX importance is lowest at 1.2 %), so there was little bias
+to remove. The pipeline nonetheless *destabilised* it: ADB over-corrected DI to
+1.31 (past the fair range) before CEO pulled it back to 1.08 — ending fair on the
+mean but with DI std ±0.31 (range ≈ 0.78–1.39). Reweighing alone stayed fair and
+stable (DI 0.84 ± 0.05). So even where the framework's final result is "fair," it
+added variance to a model that was already fair, and Reweighing alone was the
+more reliable choice.
+
+**Cross-dataset pattern (all four datasets).** The same behaviour recurs on
+Adult, COMPAS, Taiwan and German: the ADB (and CEO-on-ADB) stages are
+**model-agnostic** (identical across all four models where ADB runs) and carry
+**high seed-to-seed variance**, over-correcting DI past the fair range (COMPAS,
+Taiwan), or collapsing entirely on small data (German). **Not one of the four
+datasets shows the full pipeline cleanly achieving fairness under honest,
+leakage-controlled, multi-seed evaluation.** In every case **Reweighing alone is
+the more stable and reliable stage**, and the do-no-harm guard is required to stop
+a collapsed ADB from being reported as fair (German). This is the opposite of the
+base paper's conclusion that the full Reweigh+ADB+CEO pipeline is best, and — with
+the ~84% vs ~96% accuracy gap on Adult — indicates the paper's headline results
+are not reproducible under rigorous evaluation.
+
+**COMPAS (detail).** The full pipeline does **not** achieve DI fairness: final
+DI = 1.384 (outside [0.8, 1.25], over-corrected) with an enormous standard
+deviation of ±0.943 — a single run is uninformative. Critically, **Reweighing
+alone was both fairer and far more stable** (DI 1.153 ± 0.08, within range) than
+the full Reweigh+ADB+CEO pipeline, which over-corrected and destabilised DI. This
+reinforces the Adult finding that ADB is the unstable stage and Reweighing the
+dependable one. SPD/AOD/EOD are fair on the mean but share ADB's high variance.
+The ADB and CEO stages are again identical across all four models (model-agnostic).
 
 ---
 
