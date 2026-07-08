@@ -96,16 +96,26 @@ class) — our guard flags exactly this kind of false result.
 ## 6. Extending to images (dermatology)
 
 We also tried the framework on medical images — skin-lesion photos
-(Fitzpatrick17k), where the "groups" are lighter vs darker skin tones. The plain
-result: **the exact tabular recipe does not carry over.** Adversarial Debiasing,
+(Fitzpatrick17k), where the "groups" are lighter vs darker skin tones. Two plain
+results came out of it.
+
+First, **the exact tabular recipe does not carry over.** Adversarial Debiasing,
 which works on spreadsheet-style features, breaks down on the thousands of
 numbers a deep image model produces. So we kept the same three-step *idea*
 (before / during / after training) but swapped in image-appropriate techniques —
 a fairness-aware training loss, and adjusting the decision cut-off separately for
-each skin-tone group (chosen on validation data, never the test data). This
-reduces skin-tone bias in the image model. The finding itself — *the framework
-needs adapting for images* — is part of the contribution. (These image results
-are from a single run and are reported as preliminary.)
+each skin-tone group (chosen on validation data, never the test data).
+
+Second — and honestly — **it did not make the image model fair.** The fairness
+gap improved only slightly (still outside the fair range) and accuracy dropped
+noticeably. The cut-offs that looked fair on the validation data did not stay
+fair on the fresh test data, because this image dataset is small and very
+imbalanced (cancerous cases are rare). Importantly, an earlier version of our
+own code *looked* like it succeeded — but only because it had secretly tuned
+those cut-offs on the test data (the same leakage mistake we cleaned up on the
+tabular side). Once that was fixed, the honest answer is: on this image dataset,
+the framework does not achieve fairness. That negative-but-honest result is
+itself part of the contribution. (Single run; reported as preliminary.)
 
 ---
 

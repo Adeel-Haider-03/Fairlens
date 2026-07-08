@@ -75,9 +75,12 @@ difference without asserting error in a work whose code we cannot inspect.
    evaluation we obtain **~84%**, consistent with independent published work.
 8. **A "do-no-harm" guard is required** for small datasets (e.g. German Credit),
    where post-processing otherwise collapses the model.
-9. **The framework needs adaptation for images.** AIF360's ADB does not transfer
-   to deep ResNet features; an adapted fairness-regularised loss + group-threshold
-   calibration is required for the Fitzpatrick17k image domain (see extension).
+9. **On images, the framework does not achieve fairness under leakage-free
+   evaluation.** AIF360's ADB does not transfer to deep ResNet features; even with
+   an adapted pipeline, Fitzpatrick17k DI improves only marginally (0.67 → 0.73,
+   still < 0.8) at an 11-point accuracy cost. Validation-calibrated thresholds
+   (val DI 0.83) fail to generalise to test (DI 0.73) — the earlier apparent
+   "success" (DI 0.82) was test-set leakage.
 
 ---
 
@@ -215,9 +218,12 @@ therefore **adapt** the framework for the image domain (see
 - **Post-processing:** **group-threshold calibration**, with thresholds
   optimised on the **validation** set and applied to test — *not* AIF360 CEO
 
-This adaptation is a distinct contribution; it is reported under its own method
-names and should be treated as a domain-adaptation extension of the tabular
-study.
+This adaptation is a distinct contribution, reported under its own method names.
+Under leakage-free evaluation it **does not achieve fairness** on Fitzpatrick17k
+(DI 0.674 → 0.729, still < 0.8; accuracy 0.903 → 0.795): validation-calibrated
+group thresholds that look fair on validation (DI 0.83) do not generalise to
+test (DI 0.73). The earlier apparent success (DI 0.82) came from tuning the
+thresholds on the test set. Reported as a single-run, preliminary result.
 
 ---
 

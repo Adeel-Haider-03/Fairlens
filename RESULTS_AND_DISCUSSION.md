@@ -210,21 +210,41 @@ We therefore **adapt** each stage to the image domain:
 Because the mechanisms differ from the tabular stages, they are reported under
 their own names rather than as "ADB" and "CEO".
 
-**Table 4. Image-domain extension, Fitzpatrick17k (ResNet-50).**
-*(Re-run the corrected notebook to populate; thresholds are now calibrated on
-validation, not test, so numbers will differ from any earlier leaked run.)*
+**Table 4. Image-domain extension, Fitzpatrick17k (ResNet-50, single run,
+thresholds calibrated on validation).**
 
 | Stage | Accuracy | BA | SPD | DI | AOD | EOD |
 |---|---|---|---|---|---|---|
-| Baseline (ResNet-50) | […] | […] | […] | […] | […] | […] |
-| + Reweighing | […] | […] | […] | […] | […] | […] |
-| + Fairness-regularised loss | […] | […] | […] | […] | […] | […] |
-| + Group-threshold calibration | […] | […] | […] | […] | […] | […] |
+| Baseline (ResNet-50) | 0.903 | 0.743 | −0.038 | 0.674 | 0.010 | 0.032 |
+| + Reweighing | 0.902 | 0.728 | −0.039 | 0.635 | −0.002 | 0.009 |
+| + Fairness-regularised loss | 0.888 | 0.764 | −0.054 | 0.648 | −0.025 | −0.030 |
+| + Group-threshold calibration | 0.795 | 0.795 | −0.084 | 0.729 | −0.044 | −0.039 |
 
-**Finding:** the framework's *philosophy* (pre → in → post) transfers to images,
-but its *specific tabular methods* (AIF360 ADB/CEO) do not — domain-specific
-adaptation is required. The image results are currently from a single run and
-should be reported as preliminary unless repeated over multiple seeds.
+**Finding — the pipeline does not achieve fairness on images under
+leakage-free evaluation.** Disparate Impact improves only marginally (0.674 →
+0.729, still below the 0.8 threshold), SPD actually *worsens* (−0.038 → −0.084,
+now outside ±0.05), and accuracy falls 11 points (0.903 → 0.795). The only clear
+gain is Balanced Accuracy (0.743 → 0.795), reflecting better handling of the rare
+malignant class. No stage satisfies all four fairness thresholds.
+
+**Why — validation-calibrated thresholds do not generalise.** The group-threshold
+post-processing selected its thresholds on validation, where they *appeared* fair
+(validation DI = 0.825); on the held-out test set the same thresholds gave
+DI = 0.729 (unfair). Fitzpatrick17k is small and highly imbalanced (malignant
+≈ 14 %, class ratio ≈ 1:6.3), which makes per-group threshold calibration
+unstable.
+
+**This directly demonstrates the value of leakage-free evaluation.** An earlier
+version of the notebook optimised the group thresholds *on the test set* and
+reported DI = 0.816 (apparently fair). Once the thresholds are calibrated on
+validation and applied to test, the true generalisation is DI = 0.729 — the
+apparent image "success" was an artifact of test-set leakage. SMOTE (on ResNet
+features) again worsened fairness (DI 0.674 → 0.52–0.61), consistent with the
+tabular results.
+
+The framework's pre → in → post *structure* transfers to images, but its
+*methods* require adaptation and, on this dataset, do not reach fairness. The
+image results are from a single run and are reported as preliminary.
 
 ---
 

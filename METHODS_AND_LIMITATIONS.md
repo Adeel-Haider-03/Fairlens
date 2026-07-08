@@ -77,14 +77,18 @@ standard deviation of ≈ 0.22 (mean ≈ 0.70 on Adult) — DI varies from ≈ 0
 run is therefore not reliable; Reweighing gives a smaller but far steadier
 improvement.
 
-**(c) The tabular methods do not transfer to images.** On Fitzpatrick17k
+**(c) The framework does not achieve fairness on images.** On Fitzpatrick17k
 (ResNet-50, protected attribute skin tone), AIF360's ADB collapses on the
-2048-dimensional feature vectors. The framework's pre → in → post *structure*
-transfers, but its *specific methods* do not, so the image extension **adapts**
-each stage: Reweighing as a weighted sampler, in-processing as a
-fairness-regularised loss (demographic-parity + soft equalised-odds penalties),
-and post-processing as validation-calibrated group thresholds. These adapted
-methods are reported under their own names, not "ADB"/"CEO".
+2048-dimensional feature vectors, so the image extension **adapts** each stage
+(Reweighing as a weighted sampler, in-processing as a fairness-regularised loss,
+post-processing as validation-calibrated group thresholds). Even so, under
+leakage-free evaluation Disparate Impact improves only marginally (0.674 →
+0.729, still < 0.8), SPD worsens (−0.038 → −0.084), and accuracy drops 11 points.
+The group thresholds that appear fair on validation (DI 0.825) fail to
+generalise to test (DI 0.729) on this small, imbalanced dataset. An earlier
+version that tuned thresholds on the *test* set reported DI 0.816 — i.e. the
+apparent success was test-set leakage. The pre → in → post *structure* transfers;
+the *methods* do not reach fairness here.
 
 ---
 
@@ -146,11 +150,13 @@ reaches only its ≈ 0.80 boundary.
    time), raising the disparate-treatment consideration standard to
    post-processing fairness methods.
 
-9. **Image extension is single-run and uses adapted methods.** The
-   Fitzpatrick17k results come from adapted (not AIF360) in-/post-processing and
-   a single run; they should be reported as a preliminary domain-adaptation
-   extension unless repeated over multiple seeds. Its group-threshold
-   post-processing is calibrated on validation (not test) to avoid leakage.
+9. **Image extension is single-run, uses adapted methods, and does not reach
+   fairness.** The Fitzpatrick17k results come from adapted (not AIF360)
+   in-/post-processing and a single run, and do not satisfy the fairness
+   thresholds (final DI 0.729). Its group-threshold post-processing is calibrated
+   on validation (not test); the validation→test gap (DI 0.825 → 0.729) shows the
+   calibration is unstable on this small, imbalanced dataset. Should be reported
+   as a preliminary domain-adaptation result unless repeated over multiple seeds.
 
 ---
 
