@@ -1,10 +1,5 @@
 # A Reproducible Replication and Critical Analysis of a Three-Stage Bias-Mitigation Framework for AI Systems
 
-*Final Year Project report (draft). Detailed methodology and full result tables
-are in `METHODS_AND_LIMITATIONS.md` and `RESULTS_AND_DISCUSSION.md`; this document
-assembles the complete narrative. Replace bracketed placeholders and polish
-before submission.*
-
 ---
 
 ## Abstract
