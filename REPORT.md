@@ -1,10 +1,5 @@
 # A Reproducible Replication and Critical Analysis of a Three-Stage Bias-Mitigation Framework for AI Systems
 
-*Final Year Project report (draft). Detailed methodology and full result tables
-are in `METHODS_AND_LIMITATIONS.md` and `RESULTS_AND_DISCUSSION.md`; this document
-assembles the complete narrative. Replace bracketed placeholders and polish
-before submission.*
-
 ---
 
 ## Abstract
@@ -64,8 +59,8 @@ scrutinised.
 
 ### 1.2 The base framework
 
-This project builds on **Loganathan et al. (2025)**, *"Towards Improving Fairness
-in AI Systems: A Framework for Bias Mitigation."* That work proposes a structured,
+This project builds on **Loganathan et al. (2025)**, _"Towards Improving Fairness
+in AI Systems: A Framework for Bias Mitigation."_ That work proposes a structured,
 three-stage pipeline — **Reweighing → Adversarial Debiasing → Calibrated Equalised
 Odds** — applied to Random Forest, XGBoost, LightGBM and TabNet on the Adult Census
 Income dataset, and reports that the framework "significantly improves fairness
@@ -120,7 +115,7 @@ algorithmic design choices, and feedback loops that amplify disparities over tim
 Well-documented real-world cases include the COMPAS recidivism tool, which
 over-estimated risk for African-American defendants, and hiring systems that
 favoured particular demographics. Because bias frequently flows through features
-*correlated* with the protected attribute (proxy discrimination), removing the
+_correlated_ with the protected attribute (proxy discrimination), removing the
 protected attribute alone is insufficient.
 
 ### 2.2 Fairness metrics
@@ -136,16 +131,15 @@ Accuracy.
 
 ### 2.3 Bias-mitigation strategies
 
-- **Pre-processing** modifies the data. *Reweighing* (Kamiran & Calders, 2012)
-  assigns instance weights to balance groups; *SMOTE* (Chawla et al., 2002) and
+- **Pre-processing** modifies the data. _Reweighing_ (Kamiran & Calders, 2012)
+  assigns instance weights to balance groups; _SMOTE_ (Chawla et al., 2002) and
   its variants oversample minorities; others include Disparate Impact Remover and
   Learning Fair Representations.
-- **In-processing** modifies training. *Adversarial Debiasing* (Zhang et al.,
-  2018) trains a predictor adversarially so a discriminator cannot infer the
+- **In-processing** modifies training. _Adversarial Debiasing_ (Zhang et al., 2018) trains a predictor adversarially so a discriminator cannot infer the
   protected attribute; reductions approaches (Agarwal et al., 2018) wrap a base
   estimator with fairness constraints.
-- **Post-processing** modifies predictions. *Calibrated Equalised Odds* (Pleiss
-  et al., 2017) and *Equalised Odds* (Hardt et al., 2016) adjust group-specific
+- **Post-processing** modifies predictions. _Calibrated Equalised Odds_ (Pleiss
+  et al., 2017) and _Equalised Odds_ (Hardt et al., 2016) adjust group-specific
   decision thresholds.
 
 The base framework combines Reweighing + ADB + CEO to cover all three stages.
@@ -183,13 +177,13 @@ for the image pipeline.
 
 **Table 1. Datasets used in this study.**
 
-| Dataset | Rows | Protected attribute | Privileged group | Target | Domain |
-|---|---|---|---|---|---|
-| Adult Census | 48,842 | Race | White | Income > \$50K | Income prediction |
-| COMPAS | 7,214 | Race | Caucasian | Two-year recidivism | Criminal justice |
-| German Credit | 1,000 | Age (binary) | Older (>25) | Credit risk | Finance |
-| Taiwan Credit | 30,000 | Sex | Male | Default next month | Finance |
-| Fitzpatrick17k | 16,577 | Skin tone | Light (FST 1–3) | Malignant lesion | Dermatology (image) |
+| Dataset        | Rows   | Protected attribute | Privileged group | Target              | Domain              |
+| -------------- | ------ | ------------------- | ---------------- | ------------------- | ------------------- |
+| Adult Census   | 48,842 | Race                | White            | Income > \$50K      | Income prediction   |
+| COMPAS         | 7,214  | Race                | Caucasian        | Two-year recidivism | Criminal justice    |
+| German Credit  | 1,000  | Age (binary)        | Older (>25)      | Credit risk         | Finance             |
+| Taiwan Credit  | 30,000 | Sex                 | Male             | Default next month  | Finance             |
+| Fitzpatrick17k | 16,577 | Skin tone           | Light (FST 1–3)  | Malignant lesion    | Dermatology (image) |
 
 The four tabular datasets are standard fairness benchmarks spanning income,
 criminal-justice and credit domains, chosen to test the framework beyond the single
@@ -222,8 +216,8 @@ protected attribute to privileged (1) / unprivileged (0). A `StandardScaler`
 2. **Adversarial Debiasing (in-processing).** AIF360's `AdversarialDebiasing` —
    a TensorFlow classifier trained adversarially so a discriminator cannot recover
    the protected attribute from its representation. It is run in an isolated,
-   seeded subprocess. *Note (see §4.4): this method is a standalone classifier and
-   does not use the base model.*
+   seeded subprocess. _Note (see §4.4): this method is a standalone classifier and
+   does not use the base model._
 3. **Calibrated Equalised Odds (post-processing).** AIF360's
    `CalibratedEqOddsPostprocessing` adjusts group-specific decision thresholds. Its
    cost constraint (`fnr` / `fpr` / `weighted`) is **selected on the validation
@@ -240,7 +234,7 @@ Let `Ŷ` be the prediction, `D` the group (unprivileged `u`, privileged `p`).
 - **Average Odds Difference:** `AOD = ½[(FPR_u − FPR_p) + (TPR_u − TPR_p)]` (fair: |AOD| < 0.1).
 - **Accuracy** and **Balanced Accuracy** `BA = ½(TPR + TNR)` for performance.
 
-SPD/DI capture *outcome* fairness; AOD/EOD capture *error* fairness; BA guards
+SPD/DI capture _outcome_ fairness; AOD/EOD capture _error_ fairness; BA guards
 against misleading accuracy on imbalanced data.
 
 ### 3.7 Evaluation protocol
@@ -278,12 +272,12 @@ that high accuracy does not imply fairness. On Adult, baseline Disparate Impact 
 
 **Table 2. Baseline (no mitigation) on Adult Census, 5-seed mean.**
 
-| Model | Accuracy | Balanced Acc | SPD | DI | AOD | EOD |
-|---|---|---|---|---|---|---|
-| RF | 0.857 | 0.775 | −0.093 | 0.565 | −0.041 | −0.049 |
-| XGBoost | 0.871 | 0.799 | −0.099 | 0.547 | −0.049 | −0.065 |
-| TabNet | 0.849 | 0.746 | −0.086 | 0.536 | −0.054 | −0.081 |
-| LightGBM | 0.873 | 0.798 | −0.095 | 0.557 | −0.044 | −0.061 |
+| Model    | Accuracy | Balanced Acc | SPD    | DI    | AOD    | EOD    |
+| -------- | -------- | ------------ | ------ | ----- | ------ | ------ |
+| RF       | 0.857    | 0.775        | −0.093 | 0.565 | −0.041 | −0.049 |
+| XGBoost  | 0.871    | 0.799        | −0.099 | 0.547 | −0.049 | −0.065 |
+| TabNet   | 0.849    | 0.746        | −0.086 | 0.536 | −0.054 | −0.081 |
+| LightGBM | 0.873    | 0.798        | −0.095 | 0.557 | −0.044 | −0.061 |
 
 Crucially, the direct feature importance of `race` is only ≈ 1.0 % (and `sex`
 ≈ 1.0 %), yet the models are strongly biased. This indicates **proxy
@@ -299,7 +293,7 @@ it.** On Adult, every SMOTE variant increased |SPD| beyond the no-SMOTE baseline
 balanced accuracy rose slightly. On several datasets, particular
 model × variant combinations (e.g. TabNet + Borderline) produced **degenerate**
 models — flagged by our guard — whose accuracy fell below the majority-class
-baseline while their fairness metrics *appeared* good. This replicates and
+baseline while their fairness metrics _appeared_ good. This replicates and
 reinforces the base paper's conclusion that oversampling does not mitigate
 demographic bias and can create an illusion of fairness by degrading the
 classifier.
@@ -310,12 +304,12 @@ classifier.
 model-specific stages; ADB and CEO stages are identical across all models — see
 §4.4).
 
-| Stage | Accuracy | SPD | DI | AOD | EOD |
-|---|---|---|---|---|---|
-| Baseline (RF) | 0.857 | −0.093 | 0.565 | −0.041 | −0.049 |
-| + Reweighing (RF) | 0.856 | −0.089 | 0.582 | −0.034 | −0.037 |
-| + ADB (shared) | 0.851 | −0.063 ±0.051 | 0.700 ±0.244 | 0.000 | 0.014 |
-| + CEO (shared, final) | 0.839 ±0.010 | −0.035 ±0.038 | 0.796 ±0.223 | 0.046 | 0.096 |
+| Stage                 | Accuracy     | SPD           | DI           | AOD    | EOD    |
+| --------------------- | ------------ | ------------- | ------------ | ------ | ------ |
+| Baseline (RF)         | 0.857        | −0.093        | 0.565        | −0.041 | −0.049 |
+| + Reweighing (RF)     | 0.856        | −0.089        | 0.582        | −0.034 | −0.037 |
+| + ADB (shared)        | 0.851        | −0.063 ±0.051 | 0.700 ±0.244 | 0.000  | 0.014  |
+| + CEO (shared, final) | 0.839 ±0.010 | −0.035 ±0.038 | 0.796 ±0.223 | 0.046  | 0.096  |
 
 The full pipeline reduces demographic bias (DI 0.565 → 0.796; SPD −0.093 →
 −0.035) at a modest ~2 % accuracy cost. However, DI reaches only the ≈ 0.80
@@ -324,20 +318,20 @@ large variance (§4.5).
 
 ![Fairness across pipeline stages on Adult Census](figures/fig_adult_trajectory.png)
 
-*Figure 1. SPD and DI across the pipeline stages on Adult (RF). Both move toward
-their fair zones (shaded green) but DI only reaches the ≈ 0.80 boundary.*
+_Figure 1. SPD and DI across the pipeline stages on Adult (RF). Both move toward
+their fair zones (shaded green) but DI only reaches the ≈ 0.80 boundary._
 
 ### 4.4 Finding 1 — the ADB and CEO stages are model-agnostic (RQ2, RQ3)
 
 The most important methodological observation is that **the ADB and CEO stages
 produce identical results across all four models.** This follows directly from
-AIF360's design: Adversarial Debiasing is a *standalone* adversarial neural network
+AIF360's design: Adversarial Debiasing is a _standalone_ adversarial neural network
 that does not wrap the base estimator. Because the Reweighing weights depend only
 on the protected attribute and label (not the model), ADB's input — and hence its
 output, and CEO's output calibrated on it — is identical for every model. Only the
 Baseline and Reweighing stages are genuinely model-specific.
 
-This was initially obscured. In an early *unseeded* run, the ADB stage appeared to
+This was initially obscured. In an early _unseeded_ run, the ADB stage appeared to
 give different results per model (DI ranging 0.68–0.96). After fixing the random
 seeds, these differences vanished, revealing them to be **random-initialisation
 noise** rather than genuine per-model effects. An independent published notebook
@@ -355,9 +349,9 @@ trusted; Reweighing delivers a smaller but far more reliable improvement.
 
 ![Run-to-run instability: Reweighing vs the full pipeline](figures/fig_stability.png)
 
-*Figure 2. Disparate-Impact standard deviation over five seeds. The full pipeline
+_Figure 2. Disparate-Impact standard deviation over five seeds. The full pipeline
 (ADB+CEO) is far more variable than Reweighing alone on every dataset; on German
-the do-no-harm guard retained Reweighing, so the two are equal.*
+the do-no-harm guard retained Reweighing, so the two are equal._
 
 ### 4.6 Finding 3 — the accuracy gap and reproducibility (RQ1)
 
@@ -369,7 +363,7 @@ attribute the discrepancy to differences in evaluation protocol — most plausib
 evaluation-time information leakage in the original — **without asserting a specific
 error** in the original work, whose implementation we cannot inspect. Moreover,
 because outcome and error fairness are mutually constrained when base rates differ
-(the impossibility result), satisfying *all four* fairness metrics simultaneously —
+(the impossibility result), satisfying _all four_ fairness metrics simultaneously —
 as the paper reports — is only easy when the classifier is near-perfect, which is
 itself consistent with an inflated-accuracy regime.
 
@@ -381,12 +375,12 @@ result: **in no dataset does the full pipeline cleanly achieve fairness.**
 **Table 4. Final pipeline results across datasets (faithful Reweigh+ADB+CEO,
 5-seed mean).**
 
-| Dataset | Protected | Baseline DI | Final SPD | Final DI | Final Acc | Outcome |
-|---|---|---|---|---|---|---|
-| Adult | Race | 0.60 | −0.035 ±0.038 | 0.796 ±0.223 | 0.839 | borderline, unstable |
-| COMPAS | Race | 1.22 | 0.027 ±0.185 | 1.384 ±0.943 | 0.652 | over-corrected (>1.25), very unstable |
-| Taiwan | Sex | 0.86 | 0.005 ±0.024 | 1.082 ±0.306 | 0.809 | fair-on-mean but destabilised |
-| German | Age | 1.46 | 0.06–0.11 | 1.26–1.63 | 0.74–0.76 | ADB collapsed → do-no-harm → still unfair |
+| Dataset | Protected | Baseline DI | Final SPD     | Final DI     | Final Acc | Outcome                                   |
+| ------- | --------- | ----------- | ------------- | ------------ | --------- | ----------------------------------------- |
+| Adult   | Race      | 0.60        | −0.035 ±0.038 | 0.796 ±0.223 | 0.839     | borderline, unstable                      |
+| COMPAS  | Race      | 1.22        | 0.027 ±0.185  | 1.384 ±0.943 | 0.652     | over-corrected (>1.25), very unstable     |
+| Taiwan  | Sex       | 0.86        | 0.005 ±0.024  | 1.082 ±0.306 | 0.809     | fair-on-mean but destabilised             |
+| German  | Age       | 1.46        | 0.06–0.11     | 1.26–1.63    | 0.74–0.76 | ADB collapsed → do-no-harm → still unfair |
 
 - **COMPAS.** The pipeline over-corrected DI to 1.384 (outside [0.8, 1.25]) with an
   enormous std of ±0.943; Reweighing alone was fairer and far more stable
@@ -407,9 +401,9 @@ results are not reproducible under rigorous evaluation.
 
 ![Final Disparate Impact by dataset](figures/fig_crossdataset_DI.png)
 
-*Figure 3. Final Disparate Impact per dataset (mean ± std over five seeds). No
+_Figure 3. Final Disparate Impact per dataset (mean ± std over five seeds). No
 dataset sits comfortably inside the fair zone (shaded); error bars are large,
-and German required the do-no-harm guard.*
+and German required the do-no-harm guard._
 
 ### 4.8 Image-domain extension (RQ4)
 
@@ -422,19 +416,19 @@ as validation-calibrated group thresholds.
 **Table 5. Image-domain extension, Fitzpatrick17k (single run,
 validation-calibrated thresholds).**
 
-| Stage | Accuracy | BA | SPD | DI | AOD | EOD |
-|---|---|---|---|---|---|---|
-| Baseline (ResNet-50) | 0.903 | 0.743 | −0.038 | 0.674 | 0.010 | 0.032 |
-| + Reweighing | 0.902 | 0.728 | −0.039 | 0.635 | −0.002 | 0.009 |
-| + Fairness-regularised loss | 0.888 | 0.764 | −0.054 | 0.648 | −0.025 | −0.030 |
-| + Group-threshold calibration | 0.795 | 0.795 | −0.084 | 0.729 | −0.044 | −0.039 |
+| Stage                         | Accuracy | BA    | SPD    | DI    | AOD    | EOD    |
+| ----------------------------- | -------- | ----- | ------ | ----- | ------ | ------ |
+| Baseline (ResNet-50)          | 0.903    | 0.743 | −0.038 | 0.674 | 0.010  | 0.032  |
+| + Reweighing                  | 0.902    | 0.728 | −0.039 | 0.635 | −0.002 | 0.009  |
+| + Fairness-regularised loss   | 0.888    | 0.764 | −0.054 | 0.648 | −0.025 | −0.030 |
+| + Group-threshold calibration | 0.795    | 0.795 | −0.084 | 0.729 | −0.044 | −0.039 |
 
 Even adapted, the pipeline **does not achieve fairness**: DI improves only
 marginally (0.674 → 0.729, still < 0.8), SPD worsens, and accuracy drops 11 points.
 The group thresholds that appeared fair on validation (DI 0.825) did not generalise
 to test (DI 0.729), because the dataset is small and highly imbalanced. Notably, an
 earlier version of the notebook reported DI 0.816 (apparently fair) — but only
-because it optimised the thresholds *on the test set*. Once corrected to
+because it optimised the thresholds _on the test set_. Once corrected to
 validation, the honest figure is 0.729. This is a concrete demonstration of how
 **test-set leakage can manufacture an apparent success.**
 
@@ -443,7 +437,7 @@ validation, the honest figure is 0.729. This is a concrete demonstration of how
 Consistent with the impossibility result (Kleinberg 2016; Chouldechova 2017), gains
 in outcome fairness (SPD/DI) come at the expense of error fairness (AOD/EOD) and
 accuracy; no configuration in our study escapes this trade-off. Reported results
-that show *all* fairness metrics satisfied at high accuracy are, therefore,
+that show _all_ fairness metrics satisfied at high accuracy are, therefore,
 inherently suspect unless the classifier is near-perfect.
 
 ---
@@ -470,8 +464,8 @@ the framework's reported behaviour:
 Rather than a confirmation, this is a **critical reproducibility study**: it shows
 that these fairness interventions are less robust and less reproducible than
 commonly reported, and that rigorous, leakage-controlled, multi-seed evaluation is
-essential. We deliberately frame the accuracy discrepancy as *non-reproducible
-under our protocol* rather than as an error in the original work, whose
+essential. We deliberately frame the accuracy discrepancy as _non-reproducible
+under our protocol_ rather than as an error in the original work, whose
 implementation we cannot inspect.
 
 ### 5.2 Limitations
@@ -496,31 +490,30 @@ image extension is single-run and reported as preliminary. See
 
 ## References
 
-*(Formatting to your required citation style; DOIs/venues as available.)*
+_(Formatting to your required citation style; DOIs/venues as available.)_
 
 1. M. Loganathan, H. Sharifzadeh, A. Keivanmarz. "Towards Improving Fairness in AI
-   Systems: A Framework for Bias Mitigation." *2025 IEEE Region 10 Symposium
-   (TENSYMP)*, 2025. DOI: 10.1109/TENSYMP63728.2025.11145004.
+   Systems: A Framework for Bias Mitigation." _2025 IEEE Region 10 Symposium
+   (TENSYMP)_, 2025. DOI: 10.1109/TENSYMP63728.2025.11145004.
 2. R. K. E. Bellamy et al. "AI Fairness 360: An extensible toolkit for detecting
-   and mitigating algorithmic bias." *IBM Journal of R&D*, 63(4/5), 2019.
+   and mitigating algorithmic bias." _IBM Journal of R&D_, 63(4/5), 2019.
 3. F. Kamiran, T. Calders. "Data preprocessing techniques for classification
-   without discrimination." *Knowledge and Information Systems*, 33(1), 2012.
+   without discrimination." _Knowledge and Information Systems_, 33(1), 2012.
 4. B. H. Zhang, B. Lemoine, M. Mitchell. "Mitigating unwanted biases with
-   adversarial learning." *AAAI/ACM AIES*, 2018.
-5. G. Pleiss et al. "On fairness and calibration." *NeurIPS*, 2017.
+   adversarial learning." _AAAI/ACM AIES_, 2018.
+5. G. Pleiss et al. "On fairness and calibration." _NeurIPS_, 2017.
 6. M. Hardt, E. Price, N. Srebro. "Equality of opportunity in supervised
-   learning." *NeurIPS*, 2016.
-7. A. Agarwal et al. "A reductions approach to fair classification." *ICML*, 2018.
+   learning." _NeurIPS_, 2016.
+7. A. Agarwal et al. "A reductions approach to fair classification." _ICML_, 2018.
 8. N. V. Chawla et al. "SMOTE: Synthetic Minority Over-sampling Technique."
-   *JAIR*, 16, 2002.
+   _JAIR_, 16, 2002.
 9. J. Kleinberg, S. Mullainathan, M. Raghavan. "Inherent trade-offs in the fair
-   determination of risk scores." *ITCS*, 2017.
-10. A. Chouldechova. "Fair prediction with disparate impact." *Big Data*, 5(2),
-    2017.
-11. N. Mehrabi et al. "A survey on bias and fairness in machine learning." *ACM
-    Computing Surveys*, 54(6), 2021.
-12. J. Angwin et al. "Machine Bias (COMPAS)." *ProPublica*, 2016.
+   determination of risk scores." _ITCS_, 2017.
+10. A. Chouldechova. "Fair prediction with disparate impact." _Big Data_, 5(2), 2017.
+11. N. Mehrabi et al. "A survey on bias and fairness in machine learning." _ACM
+    Computing Surveys_, 54(6), 2021.
+12. J. Angwin et al. "Machine Bias (COMPAS)." _ProPublica_, 2016.
 13. D. Dua, C. Graff. "UCI Machine Learning Repository (Adult, German Credit,
     default of credit card clients)." 2019.
 14. M. Groh et al. "Evaluating deep neural networks trained on clinical images in
-    dermatology with the Fitzpatrick 17k dataset." *CVPR Workshops*, 2021.
+    dermatology with the Fitzpatrick 17k dataset." _CVPR Workshops_, 2021.
